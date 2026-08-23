@@ -17,6 +17,25 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # Recuperación de contraseña (CU23)
+    # Clave usada para derivar el código de 6 dígitos con HMAC (sin BD)
+    JWT_RESET_SECRET_KEY: str = "clave_secreta_super_segura_telemedicina_2026_reset_code"
+    # Ventana de validez del código (minutos)
+    RESET_CODE_TTL_MINUTES: int = 30
+    # Intentos fallidos permitidos antes del bloqueo
+    RESET_CODE_MAX_ATTEMPTS: int = 5
+    # Tiempo de bloqueo tras exceder intentos (minutos)
+    RESET_CODE_LOCKOUT_MINUTES: int = 15
+
+    # Envío de correo (SMTP). Con EMAIL_ENABLED=False el código se muestra en consola.
+    EMAIL_ENABLED: bool = False
+    EMAIL_FROM_NAME: str = "Telemedicina - Hospital San Juan de Dios"
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "no-reply@telemedicina.com"
+
     # CORS
     CORS_ORIGINS: str = "http://localhost:4200"
 

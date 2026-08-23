@@ -103,8 +103,61 @@ def run_tests():
     print(f"   GET /auth/me con token inválido -> Status: {res.status_code} ({res.json()['detail']})")
     assert res.status_code == 401
 
+    # 8. Recuperación de contraseña (CU23)
+    print("\n8. Probando recuperación de contraseña (CU23)...")
+    # Solicitar código con correo registrado (modo dev devuelve debug_code)
+    res = client.post("/auth/forgot-password", json={"correo": "admin@telemedicina.com"})
+    print(f"   POST /auth/forgot-password (válido) -> Status: {res.status_code}, Response: {res.json()}")
+    assert res.status_code == 200
+    forgot_data = res.json()
+    assert "debug_code" in forgot_data, "Se esperaba debug_code en modo desarrollo"
+    debug_code = forgot_data["debug_code"]
+    assert debug_code.isdigit() and len(debug_code) == 6
+
+    # Correo no registrado -> misma respuesta genérica (no filtra)
+    res = client.post("/auth/forgot-password", json={"correo": "no_existe@telemedicina.com"})
+    print(f"   POST /auth/forgot-password (inexistente) -> Status: {res.status_code}, Response: {res.json()}")
+    assert res.status_code == 200
+    assert "debug_code" not in res.json()
+
+    # Reset con código correcto
+    nueva_password = "NuevaPasswordCU23!"
+    res = client.post("/auth/reset-password", json={
+        "correo": "admin@telemedicina.com",
+        "codigo": debug_code,
+        "nueva_password": nueva_password,
+    })
+    print(f"   POST /auth/reset-password (código válido) -> Status: {res.status_code}, Response: {res.json()}")
+    assert res.status_code == 200
+
+    # Reset con código incorrecto
+    res = client.post("/auth/reset-password", json={
+        "correo": "admin@telemedicina.com",
+        "codigo": "000000",
+        "nueva_password": nueva_password,
+    })
+    print(f"   POST /auth/reset-password (código inválido) -> Status: {res.status_code} ({res.json()['detail']})")
+    assert res.status_code == 401
+
+    # Login con la nueva contraseña
+    res = client.post("/auth/login", json={"correo": "admin@telemedicina.com", "password": nueva_password})
+    print(f"   Login con nueva contraseña -> Status: {res.status_code}")
+    assert res.status_code == 200
+
+    # Restaurar contraseña original para no romper otros tests del seed
+    res = client.post("/auth/forgot-password", json={"correo": "admin@telemedicina.com"})
+    restore_code = res.json().get("debug_code")
+    assert restore_code
+    res = client.post("/auth/reset-password", json={
+        "correo": "admin@telemedicina.com",
+        "codigo": restore_code,
+        "nueva_password": "admin123",
+    })
+    print(f"   Restaurar contraseña original -> Status: {res.status_code}")
+    assert res.status_code == 200
+
     print("\n========================================")
-    print(" [EXITO] TODOS LOS TESTS PASARON (7/7)")
+    print(" [EXITO] TODOS LOS TESTS PASARON (8/8)")
     print("========================================")
 
 

@@ -4,6 +4,13 @@ from fastapi import HTTPException, status
 from app.modules.auth.models import Usuario
 from app.modules.auth.schemas import UsuarioCreate
 from app.core.security import hash_password, verify_password
+from app.core.security import generate_reset_code, verify_reset_code
+from app.core.email import send_password_reset_email
+
+
+FORGOT_PASSWORD_GENERIC = (
+    "Si el correo está registrado, recibirás un código de recuperación."
+)
 
 
 def get_user_by_email(db: Session, correo: str) -> Optional[Usuario]:
@@ -14,6 +21,43 @@ def get_user_by_email(db: Session, correo: str) -> Optional[Usuario]:
 def get_user_by_id(db: Session, id_usuario: int) -> Optional[Usuario]:
     """Find a user by their ID."""
     return db.query(Usuario).filter(Usuario.id_usuario == id_usuario).first()
+
+
+def request_password_reset(db: Session, correo: str) -> Optional[str]:
+    """Genera y envía el código de recuperación de contraseña (CU23).
+
+    Devuelve la respuesta genérica siempre (no filtra correos registrados).
+    Retorna debug_code solo en modo desarrollo para facilitar la demo.
+    """
+    user = get_user_by_email(db, correo)
+    if not user or user.estado != "activo":
+        # Respuesta genérica para no revelar correos existentes
+        return None
+
+    codigo = generate_reset_code(user.id_usuario)
+    debug_code = send_password_reset_email(user.correo, codigo)
+    return debug_code
+
+
+def reset_password(db: Session, correo: str, codigo: str, nueva_password: str) -> None:
+    """Valida el código y actualiza la contraseña del usuario (CU23)."""
+    user = get_user_by_email(db, correo)
+    if not user or user.estado != "activo":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se pudo restablecer la contraseña. Verifica los datos.",
+        )
+
+    if not verify_reset_code(user.id_usuario, codigo):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Código de recuperación inválido o expirado.",
+        )
+
+    user.password_hash = hash_password(nueva_password)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
 
 
 def create_user(db: Session, user_data: UsuarioCreate) -> Usuario:

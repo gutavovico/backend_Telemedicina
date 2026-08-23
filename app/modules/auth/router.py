@@ -7,10 +7,20 @@ from app.modules.auth.schemas import (
     UsuarioResponse,
     LoginRequest,
     TokenResponse,
-    RefreshTokenRequest
+    RefreshTokenRequest,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    ResetPasswordRequest,
 )
 from app.modules.auth.models import Usuario
-from app.modules.auth.service import create_user, authenticate_user, get_user_by_id
+from app.modules.auth.service import (
+    create_user,
+    authenticate_user,
+    get_user_by_id,
+    request_password_reset,
+    reset_password,
+    FORGOT_PASSWORD_GENERIC,
+)
 from app.modules.auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
@@ -122,3 +132,36 @@ def refresh_token(request_data: RefreshTokenRequest, db: Session = Depends(get_d
 def get_me(current_user: Usuario = Depends(get_current_user)):
     """Devuelve los datos del usuario actual."""
     return current_user
+
+
+@router.post(
+    "/forgot-password",
+    response_model=ForgotPasswordResponse,
+    summary="Solicitar código de recuperación de contraseña",
+    description="Recibe un correo y envía un código de 6 dígitos para restablecer la contraseña (CU23). "
+                "Siempre responde de forma genérica para no revelar correos registrados.",
+)
+def forgot_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """Solicita el envío de un código de recuperación al correo indicado."""
+    debug_code = request_password_reset(db=db, correo=data.correo)
+    response = ForgotPasswordResponse(detail=FORGOT_PASSWORD_GENERIC)
+    if debug_code:
+        # Modo desarrollo: exponer el código para facilitar la demo sin SMTP
+        response.debug_code = debug_code
+    return response
+
+
+@router.post(
+    "/reset-password",
+    summary="Restablecer contraseña con código de recuperación",
+    description="Valida el código de 6 dígitos y actualiza la contraseña del usuario (CU23).",
+)
+def reset_password_endpoint(data: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """Restablece la contraseña validando el código de recuperación."""
+    reset_password(
+        db=db,
+        correo=data.correo,
+        codigo=data.codigo,
+        nueva_password=data.nueva_password,
+    )
+    return {"detail": "Contraseña restablecida exitosamente."}

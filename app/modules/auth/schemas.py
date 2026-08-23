@@ -48,3 +48,19 @@ class TokenResponse(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str = Field(..., examples=["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."])
+
+
+class ForgotPasswordRequest(BaseModel):
+    correo: EmailStr = Field(..., examples=["juan.perez@ejemplo.com"])
+
+
+class ResetPasswordRequest(BaseModel):
+    correo: EmailStr = Field(..., examples=["juan.perez@ejemplo.com"])
+    codigo: str = Field(..., min_length=6, max_length=6, examples=["123456"])
+    nueva_password: str = Field(..., min_length=6, max_length=100, examples=["NuevaPasswordSegura123"])
+
+
+class ForgotPasswordResponse(BaseModel):
+    detail: str
+    # Solo presente en modo desarrollo (EMAIL_ENABLED=False) para facilitar la demo
+    debug_code: Optional[str] = None
