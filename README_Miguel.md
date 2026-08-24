@@ -3,12 +3,13 @@
 Proyecto de la asignatura **Sistemas de Información 2** para el **Hospital San Juan de Dios**.
 Sistema de gestión médica con telemedicina: agendamiento de citas, teleconsultas, historia clínica digital, recetas electrónicas, laboratorio y asistencia por IA.
 
-El proyecto está dividido en **dos repositorios independientes**:
+El proyecto está dividido en **tres repositorios independientes**:
 
 | Carpeta | Rol | Tecnología |
 |---|---|---|
 | `backend_Telemedicina/` | API REST + lógica de negocio + base de datos | FastAPI, SQLAlchemy, Alembic, PostgreSQL |
-| `frontend_Telemedicina/` | Interfaz de usuario | Angular 21, Angular Material, Tailwind CSS |
+| `frontend_Telemedicina/` | Interfaz de usuario (Web Admin) | Angular 21, Angular Material, Tailwind CSS |
+| `mobile_telemedicina/` | Interfaz móvil (PWA) | Flutter Web 3.47, Provider, Material 3 |
 
 ## Estado actual del avance
 
@@ -19,6 +20,7 @@ El proyecto está dividido en **dos repositorios independientes**:
   - Try-except en SMTP para fallback graceful (no muestra error si el correo se envió)
   - 4 roles funcionando: Administrador, Médico, Recepción, Paciente
   - Módulos nuevos: `organization` (Clinica, Rol) y `security` (Notificacion, Auditoria)
+- **CU23 Recuperar Acceso en móvil (completado):** Flutter Web (PWA) con pantallas Forgot/Reset Password, integración con endpoints backend existentes.
 - **Módulos pendientes:** citas, historias clínicas, comunicaciones, asistencia IA y analítica existen como esqueletos vacíos (`app/modules/` en backend y `features/` en frontend), sin lógica implementada.
 
 | Estado | Descripción |
@@ -26,10 +28,11 @@ El proyecto está dividido en **dos repositorios independientes**:
 | Estructura base FE/BE | Completado |
 | Autenticación (registro, login, refresh) | Completado |
 | CU23 Recuperar Acceso (correo + inactividad) | Completado |
+| CU23 Recuperar Acceso móvil (Flutter Web) | Completado |
 | Citas (`appointments`) | Pendiente |
 | Historias clínicas (`medical-records`) | Pendiente |
 | Comunicaciones (`communications`) | Pendiente |
-| Asistente IA (`ai-assistant`) | Pendiente |
+| Asistente IA (`ai_assistant`) | Pendiente |
 | Analítica / reportes (`analytics`) | Pendiente |
 
 ---
@@ -38,8 +41,9 @@ El proyecto está dividido en **dos repositorios independientes**:
 
 | Capa | Tecnología | Detalle |
 |---|---|---|
-| Frontend | Angular 21.2 (CLI `ng`) | Standalone components + signals, SSR habilitado |
+| Frontend (Admin) | Angular 21.2 (CLI `ng`) | Standalone components + signals, SSR habilitado |
 | UI | Angular Material 21 + Tailwind CSS 4 | Componentes y estilos |
+| Móvil (PWA) | Flutter Web 3.47 | Compila a JS/HTML/CSS, Provider state management, Material 3 theming |
 | Backend | FastAPI + Uvicorn | API REST documentada en `/docs` |
 | ORM | SQLAlchemy 2.0 + Alembic | Modelos y migraciones |
 | Base de datos | PostgreSQL en Neon | 42 tablas |
@@ -65,41 +69,64 @@ PROYECTO SI2/
 │   │   │   ├── medical_records/ # vacío
 │   │   │   ├── communications/  # vacío
 │   │   │   ├── ai_assistant/    # vacío
-│   │   │   ├── analytics/       # vacío
-│   │   │   ├── organization/    # ✔ Clinica, Rol (nuevo)
-│   │   │   └── security/        # ✔ Notificacion, Auditoria (nuevo)
+│   │   │   └── analytics/       # vacío
 │   │   └── main.py              # FastAPI app + CORS + routers
 │   ├── alembic/                 # Migraciones
 │   ├── scripts/
 │   │   ├── seed.py              # Usuarios iniciales
 │   │   └── test_endpoints.py    # Pruebas de endpoints (incluye CU23)
 │   └── requirements.txt
-└── frontend_Telemedicina/
-    ├── src/
-    │   ├── app/
-│   │   ├── core/
-│   │   │   ├── services/auth.service.ts   # Login, tokens, perfil, recuperación
-│   │   │   ├── services/inactivity.service.ts # Cierre por inactividad (CU23)
-│   │   │   ├── guards/auth.guard.ts       # Protección de rutas
-│   │   │   ├── interceptors/auth.interceptor.ts # JWT + auto-refresh
-│   │   │   └── models/auth.models.ts
-│   │   ├── features/
-│   │   │   ├── home/          # Landing page
-│   │   │   ├── auth/login/    # Inicio de sesión
-│   │   │   ├── auth/register/ # Registro
-│   │   │   ├── auth/recover/  # Recuperar contraseña (solicitar código)
-│   │   │   ├── auth/reset-password/ # Restablecer contraseña (código)
-│   │   │   ├── appointments/  # vacío
-│   │   │   ├── medical-records/ # vacío
-│   │   │   ├── communications/ # vacío
-│   │   │   ├── ai-assistant/  # vacío
-│   │   │   └── analytics/     # vacío
-    │   │   └── shared/
-    │   │       ├── components/header/  # Header con menú de usuario
-    │   │       └── components/footer/  # Footer
-    │   ├── environments/          # environment.ts (apiUrl localhost:8000)
-    │   └── styles.css
-    └── package.json
+├── frontend_Telemedicina/
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── core/
+│   │   │   │   ├── services/auth.service.ts   # Login, tokens, perfil, recuperación
+│   │   │   │   ├── services/inactivity.service.ts # Cierre por inactividad (CU23)
+│   │   │   │   ├── guards/auth.guard.ts       # Protección de rutas
+│   │   │   │   ├── interceptors/auth.interceptor.ts # JWT + auto-refresh
+│   │   │   │   └── models/auth.models.ts
+│   │   │   ├── features/
+│   │   │   │   ├── home/          # Landing page
+│   │   │   │   ├── auth/login/    # Inicio de sesión
+│   │   │   │   ├── auth/register/ # Registro
+│   │   │   │   ├── auth/recover/  # Recuperar contraseña (solicitar código)
+│   │   │   │   ├── auth/reset-password/ # Restablecer contraseña (código)
+│   │   │   │   ├── appointments/  # vacío
+│   │   │   │   ├── medical-records/ # vacío
+│   │   │   │   ├── communications/ # vacío
+│   │   │   │   ├── ai-assistant/  # vacío
+│   │   │   │   └── analytics/     # vacío
+│   │   │   └── shared/
+│   │   │       ├── components/header/  # Header con menú de usuario
+│   │   │       └── components/footer/  # Footer
+│   │   ├── environments/          # environment.ts (apiUrl localhost:8000)
+│   │   └── styles.css
+│   └── package.json
+└── mobile_telemedicina/
+    ├── lib/
+    │   ├── core/
+    │   │   ├── config/api_config.dart      # URLs backend (10.0.2.2 para emulador)
+    │   │   ├── network/api_client.dart     # HTTP client con auth interceptors
+    │   │   ├── storage/secure_storage_service.dart # Tokens + user cache
+    │   │   └── theme/                      # Colors, typography, theme
+    │   ├── features/
+    │   │   └── auth/
+    │   │       ├── data/
+    │   │       │   ├── models/auth_models.dart       # ← +Forgot/Reset models
+    │   │       │   └── datasources/auth_remote_datasource.dart # ← +forgot/reset
+    │   │       ├── presentation/
+    │   │       │   ├── controllers/auth_controller.dart      # ← +forgot/reset methods
+    │   │       │   ├── screens/
+    │   │       │   │   ├── login_screen.dart                 # ← +link "¿Olvidaste?"
+    │   │       │   │   ├── forgot_password_screen.dart       # 🆕 Nueva
+    │   │       │   │   ├── reset_password_screen.dart        # 🆕 Nueva
+    │   │       │   │   ├── register_screen.dart
+    │   │       │   │   ├── splash_screen.dart
+    │   │       │   │   └── home_screen.dart
+    │   │       │   └── widgets/              # CustomTextField, AuthButton, AuthBanner, etc.
+    │   └── main.dart                       # ← +rutas /forgot-password, /reset-password
+    ├── pubspec.yaml
+    └── README.md
 ```
 
 ---
@@ -110,6 +137,7 @@ PROYECTO SI2/
 
 - Python 3.10+ (backend)
 - Node.js (Angular CLI 21)
+- Flutter 3.47+ (mobile_telemedicina)
 - PostgreSQL local (por ahora: `localhost:5432`, user `postgres`, pass `12345`, BD `telemedicina`; definir también en `.env`). El esquema de 42 tablas está diseñado para Neon.
 
 ### Backend (FastAPI)
@@ -145,6 +173,18 @@ ng serve
 - Aplicación: http://localhost:4200
 - El backend debe estar corriendo en http://localhost:8000 (configurado en `src/environments/environment.ts`)
 
+### Móvil (Flutter Web / PWA)
+
+```bash
+cd mobile_telemedicina
+flutter pub get
+flutter run -d chrome          # Dev con hot reload
+# Para probar en "móvil": F12 → Ctrl+Shift+M → Pixel 7 / iPhone
+flutter build web              # Build producción (output: build/web/)
+```
+
+**Nota:** Flutter Web **no corre en emulador Android**. Se prueba en Chrome/Edge con **Device Toolbar** (F12 → Ctrl+Shift+M) simulando Pixel 7, iPhone, etc. El backend URL en `api_config.dart` usa `10.0.2.2:8000` para Android/emulador y `192.168.100.30:8000` para device físico/web.
+
 ### Pruebas de endpoints (backend)
 
 ```bash
@@ -171,13 +211,8 @@ Esquema PostgreSQL (Neon) con **42 tablas**, agrupadas por dominio:
 | Tratamientos e IA | `tratamientos`, `tratamiento_medicamentos`, `seguimiento_tratamiento`, `cuestionarios`, `evaluaciones_triaje`, `asistencias_ia` |
 | Soporte | `notificaciones`, `pagos`, `comprobantes`, `reportes`, `auditoria` |
 
-- La tabla `usuarios` se relaciona con `clinicas` y `roles` (1:1) y es la base del módulo de autenticación actual. **CU23**: campos `id_clinica NOT NULL`, `id_rol NOT NULL`, `estado` default `'ACTIVO'`.
-- Roles iniciales insertados por el script: Administración, Médico, Recepción, Paciente (todos `id_clinica NULL` = globales).
-- Usuarios seed (4):
-  - Admin: `admin@telemedicina.com` / `admin123`
-  - Doctor: `doctor@telemedicina.com` / `doctor123`
-  - Recepción: `recep@telemedicina.com` / `recep123`
-  - Paciente: `paciente@telemedicina.com` / `paciente123`
+- La tabla `usuarios` se relaciona con `clinicas` y `roles` (1:1) y es la base del módulo de autenticación actual.
+- Roles iniciales insertados por el script: Administración, Médico, Recepción, Paciente.
 
 ---
 
@@ -201,11 +236,6 @@ Caso de uso que cubre dos funcionalidades:
 - Comparación en **tiempo constante** (`hmac.compare_digest`).
 - **Anti fuerza bruta:** máx. 5 intentos fallidos por usuario → bloqueo de 15 minutos (en memoria).
 
-**Mejoras implementadas (CU23):**
-- **Try-except en SMTP** (`app/core/email.py`): si el login SMTP falla pero `send_message` ya corrió, no se muestra error al usuario; solo log en consola (`[SMTP WARNING]`).
-- **Estado case-insensitive** (`app/modules/auth/service.py`): comparación `user.estado.lower() != "activo"` para aceptar `ACTIVO`/`activo`/`Activo`.
-- **Hash del doctor corregido**: regenerado con bcrypt válido (antes era placeholder inválido).
-
 **Configuración de correo (`.env` o defaults en `app/core/config.py`):**
 
 | Variable | Default | Descripción |
@@ -220,7 +250,7 @@ Caso de uso que cubre dos funcionalidades:
 
 > En modo dev (`EMAIL_ENABLED=False`) la respuesta de `forgot-password` incluye `debug_code` con el código generado para facilitar la demo. En producción el código solo llega por correo.
 
-### Frontend
+### Frontend (Angular)
 
 | Ruta | Componente | Descripción |
 |---|---|---|
@@ -234,63 +264,49 @@ Caso de uso que cubre dos funcionalidades:
 - Si el usuario marcó **"Mantener sesión iniciada"** (`rememberMe`), el timeout se duplica (30 min).
 - Al expirar, limpia tokens y redirige a `/login?expired=true`. Solo se ejecuta en navegador (SSR-safe).
 
+### Móvil (Flutter Web)
+
+| Ruta | Pantalla | Descripción |
+|---|---|---|
+| `/forgot-password` | `ForgotPasswordScreen` | Formulario email → "Enviar Código" → navega a ResetPasswordScreen |
+| `/reset-password` | `ResetPasswordScreen` | 6 dígitos (6 TextField con auto-focus) + nueva contraseña + confirmar → "Restablecer" |
+| `/login` | `LoginScreen` | Link "¿Olvidaste tu contraseña?" → `/forgot-password` |
+
+**Validaciones frontend:**
+- Email: `Validators.validateEmail`
+- Código: 6 dígitos numéricos (auto-focus entre campos)
+- Nueva contraseña: `Validators.validatePassword` (mín 6 caracteres)
+- Confirmar: Debe coincidir con nueva
+
+**Seguridad:** Reusa lógica HMAC/anti-fuerza-bruta del backend (mismos endpoints).
+
 ### Prueba del flujo (modo dev, BD local)
 
 1. Backend corriendo (`uvicorn app.main:app --reload --port 8000`) y seed aplicado.
 2. `POST /auth/forgot-password` con `{"correo": "admin@telemedicina.com"}` → 200 con `debug_code` (y `[DEV] Código...` en consola).
 3. `POST /auth/reset-password` con `{"correo": "...", "codigo": "<debug_code>", "nueva_password": "NuevaPass123"}` → 200.
 4. `POST /auth/login` con la nueva contraseña → 200.
-5. En el frontend: `/recuperar` → ingresar correo → tomar el código de la consola → `/recuperar-contrasena` → nueva contraseña → login con `?reset=true`.
-6. Inactividad: reducir `inactivityTimeoutMinutes` a `0.2` (12 s), iniciar sesión y no tocar nada → redirige a `/login?expired=true`. Restaurar a 15.
-7. Pruebas automatizadas: `python scripts/test_endpoints.py` (incluye casos CU23).
+5. En el frontend (Angular): `/recuperar` → ingresar correo → tomar el código de la consola → `/recuperar-contrasena` → nueva contraseña → login con `?reset=true`.
+6. En el móvil (Flutter Web): `/forgot-password` → email → "Enviar Código" → `/reset-password` → 6 dígitos + nueva pass → login.
+7. Inactividad: reducir `inactivityTimeoutMinutes` a `0.2` (12 s), iniciar sesión y no tocar nada → redirige a `/login?expired=true`. Restaurar a 15.
+8. Pruebas automatizadas: `python scripts/test_endpoints.py` (incluye casos CU23).
 
 ---
 
 ## Notas y pendientes
 
 - **Secretos hardcodeados:** las claves JWT y credenciales de BD están como valores por defecto en `app/core/config.py`; deben moverse a variables de entorno (`.env`) en producción.
+- **Desfase de esquema:** el modelo `usuarios` del backend actual no incluye `id_clinica` ni `id_rol` (en el esquema real son obligatorios). Habrá que alinearlo al desarrollar los módulos de organización.
 - **Fallback inexistente:** el frontend intenta un endpoint `/usuarios/me` como respaldo en `auth.service.ts`, pero ese endpoint no existe en el backend.
+- **Estados en mayúsculas:** la BD real usa `'ACTIVO'`/`'PROGRAMADA'`, mientras el backend compara con `'activo'` en minúsculas. Alinear al implementar los estados.
 - **CU23 anti fuerza bruta en memoria:** el bloqueo de 5 intentos fallidos vive en memoria del proceso; se reinicia si el servidor se reinicia. El código en sí (HMAC) no necesita estado.
-
-### Completado (CU23)
-
-- ✅ **Hash del doctor corregido:** regenerado con bcrypt válido (antes era placeholder inválido).
-- ✅ **Comparación de estado case-insensitive:** `user.estado.lower() != "activo"` en `service.py` (línea 103).
-- ✅ **Try-except en SMTP:** `_send_smtp()` captura excepción; si `send_message` ya corrió, no muestra error al usuario; solo log `[SMTP WARNING]`.
-- ✅ **4 roles funcionales:** Admin, Médico, Recepción, Paciente con login y recuperación funcionando.
-- ✅ **Módulos nuevos creados:** `organization` (Clinica, Rol) y `security` (Notificacion, Auditoria).
-- ✅ **Tabla `usuarios` alineada:** campos `id_clinica NOT NULL`, `id_rol NOT NULL`, `estado` default `'ACTIVO'`.
-
-### Pendientes reales
-
-- **Endpoint `/usuarios/me` faltante:** el frontend lo usa como fallback en `auth.service.ts` pero no existe en el backend.
-- **Desfase de esquema histórico:** el modelo `usuarios` del backend original no incluía `id_clinica` ni `id_rol` (en el esquema real son obligatorios); ahora alineado con CU23.
-
----
-
-## Cambios técnicos CU23 — Resumen
-
-| Archivo | Cambio |
-|---|---|
-| `app/core/email.py` | Try-except en `_send_smtp()` para fallback graceful (no muestra error si `send_message` ya ejecutó) |
-| `app/modules/auth/service.py` | Línea 103: `user.estado.lower() != "activo"` — comparación case-insensitive |
-| `app/modules/auth/models.py` | Campos `id_clinica` (FK NOT NULL), `id_rol` (FK NOT NULL), `estado` default `'ACTIVO'` |
-| `app/modules/organization/models.py` | **NUEVO** — Models `Clinica`, `Rol` con relationships |
-| `app/modules/security/models.py` | **NUEVO** — Models `Notificacion`, `Auditoria` |
-| `alembic/versions/002_alinear_ddl.py` | Migración idempotente CU23 (crea tablas/columnas si no existen) |
-| `alembic/env.py` | Import models nuevos para autogenerate |
-
----
-
-## Usuarios iniciales (seed)
-
-| Rol | Correo | Contraseña |
-|---|---|---|
-| Administración | `admin@telemedicina.com` | `admin123` |
-| Médico | `doctor@telemedicina.com` | `doctor123` |
-| Recepción | `recep@telemedicina.com` | `recep123` |
-| Paciente | `paciente@telemedicina.com` | `paciente123` |
+- **Flutter Web vs Emulador:** `mobile_telemedicina` es PWA (Flutter Web), no app nativa. Se prueba en Chrome + Device Toolbar, no en emulador Android.
 
 ---
 
 ## Enlaces útiles
+
+- Backend docs (Swagger): http://localhost:8000/docs
+- Angular CLI: https://github.com/angular/angular-cli
+- Flutter Web: https://flutter.dev/web
+- Neon (PostgreSQL): https://neon.tech
