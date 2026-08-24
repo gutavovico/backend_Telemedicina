@@ -100,7 +100,7 @@ def authenticate_user(db: Session, correo: str, password: str) -> Optional[Usuar
         return None
     if not verify_password(password, user.password_hash):
         return None
-    if user.estado != "activo":
+    if user.estado.lower() != "activo":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="La cuenta de usuario está inactiva o suspendida."

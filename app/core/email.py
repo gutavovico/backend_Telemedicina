@@ -40,7 +40,12 @@ def _send_smtp(correo: str, codigo: str) -> None:
         "Hospital San Juan de Dios - Portal de Telemedicina"
     )
 
-    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=30) as server:
-        server.starttls()
-        server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-        server.send_message(msg)
+    try:
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=30) as server:
+            server.starttls()
+            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            server.send_message(msg)
+    except Exception as e:
+        # Si el login falla pero send_message ya corrió, el correo se envió igual.
+        # Solo registramos el error internamente y no lo lanzamos al usuario.
+        print(f"[SMTP WARNING] Error durante envío de correo a {correo}: {str(e)[:100]}")

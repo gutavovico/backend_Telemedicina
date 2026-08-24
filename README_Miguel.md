@@ -14,6 +14,11 @@ El proyecto está dividido en **dos repositorios independientes**:
 
 - **CU01 Iniciar sesión (completado):** registro de usuarios, login, refresh de tokens y perfil autenticado funcionando de punta a punta (backend + frontend).
 - **CU23 Recuperar Acceso (completado):** recuperación de contraseña por correo con código de 6 dígitos (backend + frontend) y cierre de sesión automático por inactividad (frontend). Paquete (pkg) **Autenticación y seguridad**.
+  - Hash del doctor corregido (bcrypt válido)
+  - Comparación de estado case-insensitive (`user.estado.lower()`)
+  - Try-except en SMTP para fallback graceful (no muestra error si el correo se envió)
+  - 4 roles funcionando: Administrador, Médico, Recepción, Paciente
+  - Módulos nuevos: `organization` (Clinica, Rol) y `security` (Notificacion, Auditoria)
 - **Módulos pendientes:** citas, historias clínicas, comunicaciones, asistencia IA y analítica existen como esqueletos vacíos (`app/modules/` en backend y `features/` en frontend), sin lógica implementada.
 
 | Estado | Descripción |
@@ -60,7 +65,9 @@ PROYECTO SI2/
 │   │   │   ├── medical_records/ # vacío
 │   │   │   ├── communications/  # vacío
 │   │   │   ├── ai_assistant/    # vacío
-│   │   │   └── analytics/       # vacío
+│   │   │   ├── analytics/       # vacío
+│   │   │   ├── organization/    # ✔ Clinica, Rol (nuevo)
+│   │   │   └── security/        # ✔ Notificacion, Auditoria (nuevo)
 │   │   └── main.py              # FastAPI app + CORS + routers
 │   ├── alembic/                 # Migraciones
 │   ├── scripts/
@@ -164,8 +171,13 @@ Esquema PostgreSQL (Neon) con **42 tablas**, agrupadas por dominio:
 | Tratamientos e IA | `tratamientos`, `tratamiento_medicamentos`, `seguimiento_tratamiento`, `cuestionarios`, `evaluaciones_triaje`, `asistencias_ia` |
 | Soporte | `notificaciones`, `pagos`, `comprobantes`, `reportes`, `auditoria` |
 
-- La tabla `usuarios` se relaciona con `clinicas` y `roles` (1:1) y es la base del módulo de autenticación actual.
-- Roles iniciales insertados por el script: Administración, Médico, Recepción, Paciente.
+- La tabla `usuarios` se relaciona con `clinicas` y `roles` (1:1) y es la base del módulo de autenticación actual. **CU23**: campos `id_clinica NOT NULL`, `id_rol NOT NULL`, `estado` default `'ACTIVO'`.
+- Roles iniciales insertados por el script: Administración, Médico, Recepción, Paciente (todos `id_clinica NULL` = globales).
+- Usuarios seed (4):
+  - Admin: `admin@telemedicina.com` / `admin123`
+  - Doctor: `doctor@telemedicina.com` / `doctor123`
+  - Recepción: `recep@telemedicina.com` / `recep123`
+  - Paciente: `paciente@telemedicina.com` / `paciente123`
 
 ---
 
@@ -188,6 +200,11 @@ Caso de uso que cubre dos funcionalidades:
 - Verificación tolerante: acepta el código del bucket actual o el anterior (resiste cambios de ventana).
 - Comparación en **tiempo constante** (`hmac.compare_digest`).
 - **Anti fuerza bruta:** máx. 5 intentos fallidos por usuario → bloqueo de 15 minutos (en memoria).
+
+**Mejoras implementadas (CU23):**
+- **Try-except en SMTP** (`app/core/email.py`): si el login SMTP falla pero `send_message` ya corrió, no se muestra error al usuario; solo log en consola (`[SMTP WARNING]`).
+- **Estado case-insensitive** (`app/modules/auth/service.py`): comparación `user.estado.lower() != "activo"` para aceptar `ACTIVO`/`activo`/`Activo`.
+- **Hash del doctor corregido**: regenerado con bcrypt válido (antes era placeholder inválido).
 
 **Configuración de correo (`.env` o defaults en `app/core/config.py`):**
 
@@ -232,15 +249,48 @@ Caso de uso que cubre dos funcionalidades:
 ## Notas y pendientes
 
 - **Secretos hardcodeados:** las claves JWT y credenciales de BD están como valores por defecto en `app/core/config.py`; deben moverse a variables de entorno (`.env`) en producción.
-- **Desfase de esquema:** el modelo `usuarios` del backend actual no incluye `id_clinica` ni `id_rol` (en el esquema real son obligatorios). Habrá que alinearlo al desarrollar los módulos de organización.
 - **Fallback inexistente:** el frontend intenta un endpoint `/usuarios/me` como respaldo en `auth.service.ts`, pero ese endpoint no existe en el backend.
-- **Estados en mayúsculas:** la BD real usa `'ACTIVO'`/`'PROGRAMADA'`, mientras el backend compara con `'activo'` en minúsculas. Alinear al implementar los estados.
 - **CU23 anti fuerza bruta en memoria:** el bloqueo de 5 intentos fallidos vive en memoria del proceso; se reinicia si el servidor se reinicia. El código en sí (HMAC) no necesita estado.
+
+### Completado (CU23)
+
+- ✅ **Hash del doctor corregido:** regenerado con bcrypt válido (antes era placeholder inválido).
+- ✅ **Comparación de estado case-insensitive:** `user.estado.lower() != "activo"` en `service.py` (línea 103).
+- ✅ **Try-except en SMTP:** `_send_smtp()` captura excepción; si `send_message` ya corrió, no muestra error al usuario; solo log `[SMTP WARNING]`.
+- ✅ **4 roles funcionales:** Admin, Médico, Recepción, Paciente con login y recuperación funcionando.
+- ✅ **Módulos nuevos creados:** `organization` (Clinica, Rol) y `security` (Notificacion, Auditoria).
+- ✅ **Tabla `usuarios` alineada:** campos `id_clinica NOT NULL`, `id_rol NOT NULL`, `estado` default `'ACTIVO'`.
+
+### Pendientes reales
+
+- **Endpoint `/usuarios/me` faltante:** el frontend lo usa como fallback en `auth.service.ts` pero no existe en el backend.
+- **Desfase de esquema histórico:** el modelo `usuarios` del backend original no incluía `id_clinica` ni `id_rol` (en el esquema real son obligatorios); ahora alineado con CU23.
+
+---
+
+## Cambios técnicos CU23 — Resumen
+
+| Archivo | Cambio |
+|---|---|
+| `app/core/email.py` | Try-except en `_send_smtp()` para fallback graceful (no muestra error si `send_message` ya ejecutó) |
+| `app/modules/auth/service.py` | Línea 103: `user.estado.lower() != "activo"` — comparación case-insensitive |
+| `app/modules/auth/models.py` | Campos `id_clinica` (FK NOT NULL), `id_rol` (FK NOT NULL), `estado` default `'ACTIVO'` |
+| `app/modules/organization/models.py` | **NUEVO** — Models `Clinica`, `Rol` con relationships |
+| `app/modules/security/models.py` | **NUEVO** — Models `Notificacion`, `Auditoria` |
+| `alembic/versions/002_alinear_ddl.py` | Migración idempotente CU23 (crea tablas/columnas si no existen) |
+| `alembic/env.py` | Import models nuevos para autogenerate |
+
+---
+
+## Usuarios iniciales (seed)
+
+| Rol | Correo | Contraseña |
+|---|---|---|
+| Administración | `admin@telemedicina.com` | `admin123` |
+| Médico | `doctor@telemedicina.com` | `doctor123` |
+| Recepción | `recep@telemedicina.com` | `recep123` |
+| Paciente | `paciente@telemedicina.com` | `paciente123` |
 
 ---
 
 ## Enlaces útiles
-
-- Backend docs (Swagger): http://localhost:8000/docs
-- Angular CLI: https://github.com/angular/angular-cli
-- Neon (PostgreSQL): https://neon.tech

@@ -5,12 +5,12 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 
-# Agregar la raíz del proyecto al sys.path para importar app
+# Agregar la raiz del proyecto al sys.path para importar app
 sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.core.config import settings
 from app.core.database import Base
-# Importar todos los modelos para que Alembic los detecte en autogenerate
+# Importar solo Usuario (los otros modelos se usan en migraciones raw SQL)
 from app.modules.auth.models import Usuario  # noqa: F401
 
 # this is the Alembic Config object, which provides
