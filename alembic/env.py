@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.database import Base
 # Importar todos los modelos para que Alembic los detecte en autogenerate
 from app.modules.auth.models import Usuario  # noqa: F401
+from app.modules.medicos.models import Especialidad, Medico, MedicoEspecialidad  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
