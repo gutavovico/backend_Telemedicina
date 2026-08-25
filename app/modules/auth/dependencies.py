@@ -40,6 +40,13 @@ def get_current_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Usuario no encontrado",
         )
+
+    if payload.get("token_version", 0) != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sesión cerrada o token revocado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     
     if user.estado != "activo":
         raise HTTPException(

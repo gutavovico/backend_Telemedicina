@@ -13,6 +13,7 @@ class Usuario(Base):
     correo = Column(String(150), unique=True, nullable=False, index=True)
     telefono = Column(String(20), nullable=True)
     password_hash = Column(String(255), nullable=False)
+    token_version = Column(BigInteger, nullable=False, default=0, server_default="0")
     foto_perfil = Column(String(500), nullable=True)
     estado = Column(String(20), nullable=False, default="activo")
     notificaciones_push = Column(Boolean, default=True, nullable=False)
