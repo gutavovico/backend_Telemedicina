@@ -1,13 +1,13 @@
-from sqlalchemy import Column, BigInteger, String, Boolean, DateTime, func
+from sqlalchemy import Column, BigInteger, Integer, String, Boolean, DateTime, func
 from app.core.database import Base
 
 
 class Usuario(Base):
     __tablename__ = "usuarios"
 
-    id_usuario = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
-    # id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=True)  # Pendiente de implementar
-    # id_rol = Column(BigInteger, ForeignKey("roles.id_rol"), nullable=True)             # Pendiente de implementar
+    id_usuario = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
+    id_clinica = Column(BigInteger, nullable=True, index=True)
+    id_rol = Column(BigInteger, nullable=True, index=True)
     nombres = Column(String(100), nullable=False)
     apellidos = Column(String(100), nullable=False)
     correo = Column(String(150), unique=True, nullable=False, index=True)

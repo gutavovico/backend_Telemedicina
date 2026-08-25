@@ -75,6 +75,8 @@ def create_user(db: Session, user_data: UsuarioCreate) -> Usuario:
 
     # Instantiate model
     new_user = Usuario(
+        id_clinica=user_data.id_clinica,
+        id_rol=user_data.id_rol,
         nombres=user_data.nombres.strip(),
         apellidos=user_data.apellidos.strip(),
         correo=user_data.correo.lower().strip(),

@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.modules.auth.router import router as auth_router
+from app.modules.medical_records.router import router as medical_records_router
 
 app = FastAPI(
     title="Telemedicina API",
@@ -22,6 +23,7 @@ app.add_middleware(
 
 # Registro de routers de módulos
 app.include_router(auth_router)
+app.include_router(medical_records_router)
 
 
 @app.get("/", tags=["General"], summary="Health Check")
