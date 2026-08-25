@@ -57,6 +57,7 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     # Token payload
     token_payload = {
         "sub": str(user.id_usuario),
+        "token_version": user.token_version,
         "email": user.correo,
         "nombres": user.nombres,
         "apellidos": user.apellidos,
@@ -99,7 +100,13 @@ def refresh_token(request_data: RefreshTokenRequest, db: Session = Depends(get_d
         )
 
     user = get_user_by_id(db, user_id)
-    if not user or user.estado != "activo":
+    if not user or payload.get("token_version", 0) != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sesión cerrada o refresh token revocado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if user.estado != "activo":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario inactivo o no encontrado",
@@ -108,6 +115,7 @@ def refresh_token(request_data: RefreshTokenRequest, db: Session = Depends(get_d
 
     new_payload = {
         "sub": str(user.id_usuario),
+        "token_version": user.token_version,
         "email": user.correo,
         "nombres": user.nombres,
         "apellidos": user.apellidos,
@@ -121,6 +129,27 @@ def refresh_token(request_data: RefreshTokenRequest, db: Session = Depends(get_d
         refresh_token=new_refresh_token,
         token_type="bearer"
     )
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Cerrar sesión",
+    description="Revoca la sesión del usuario y todos sus tokens emitidos.",
+)
+def logout(request_data: RefreshTokenRequest, db: Session = Depends(get_db)):
+    """Revoca los tokens incrementando la versión de sesión del usuario."""
+    payload = decode_refresh_token(request_data.refresh_token)
+    user_id_str = payload.get("sub")
+    try:
+        user_id = int(user_id_str)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token inválido")
+
+    user = get_user_by_id(db, user_id)
+    if user:
+        user.token_version += 1
+        db.commit()
 
 
 @router.get(

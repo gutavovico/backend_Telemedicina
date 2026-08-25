@@ -31,3 +31,6 @@ python-multipart>=0.0.9
 
 # Testing
 httpx>=0.27.0
+
+# Configuracion requerida: crear .env con la base PostgreSQL y ejecutar
+# `alembic upgrade head` antes de iniciar la API.
