@@ -9,7 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy import inspect
+from sqlalchemy import inspect, func, ForeignKey
 
 # revision identifiers, used by Alembic.
 revision: str = '002_alinear_ddl'
@@ -35,77 +35,17 @@ def columns_exist(connection, table_name, column_names):
 def upgrade() -> None:
     bind = op.get_bind()
     
-    # Tablas que deben existir (crear solo si no existen)
-    tables_to_create = [
-        (
-            'clinicas',
-            sa.Column('id_clinica', sa.BigInteger(), primary_key=True, autoincrement=True),
-            sa.Column('nombre', sa.String(length=150), nullable=False),
-            sa.Column('razon_social', sa.String(length=200), nullable=True),
-            sa.Column('nit', sa.String(length=50), unique=True, nullable=True),
-            sa.Column('telefono', sa.String(length=30), nullable=True),
-            sa.Column('correo', sa.String(length=150), nullable=True),
-            sa.Column('direccion', sa.String(length=250), nullable=True),
-            sa.Column('logo', sa.String(length=500), nullable=True),
-            sa.Column('estado', sa.String(length=20), nullable=False, server_default='ACTIVO'),
-            sa.Column('fecha_creacion', sa.DateTime(timezone=True), server_default=func.now(), nullable=False),
-        ),
-        (
-            'roles',
-            sa.Column('id_rol', sa.BigInteger(), primary_key=True, autoincrement=True),
-            sa.Column('id_clinica', sa.BigInteger(), ForeignKey('clinicas.id_clinica'), nullable=True),
-            sa.Column('nombre', sa.String(length=100), nullable=False),
-            sa.Column('descripcion', sa.String, nullable=True),
-            sa.Column('estado', sa.String(length=20), nullable=False, server_default='ACTIVO'),
-        ),
-        (
-            'notificaciones',
-            sa.Column('id_notificacion', sa.BigInteger(), primary_key=True, autoincrement=True),
-            sa.Column('id_usuario', sa.BigInteger(), ForeignKey('usuarios.id_usuario'), nullable=False),
-            sa.Column('tipo', sa.String(length=50), nullable=True),
-            sa.Column('canal', sa.String(length=30), nullable=True),
-            sa.Column('titulo', sa.String(length=200), nullable=True),
-            sa.Column('mensaje', sa.Text, nullable=True),
-            sa.Column('fecha_programada', sa.DateTime(timezone=True), nullable=True),
-            sa.Column('fecha_envio', sa.DateTime(timezone=True), nullable=True),
-            sa.Column('fecha_lectura', sa.DateTime(timezone=True), nullable=True),
-            sa.Column('estado', sa.String(length=30), nullable=False, server_default='PENDIENTE'),
-        ),
-        (
-            'auditoria',
-            sa.Column('id_auditoria', sa.BigInteger(), primary_key=True, autoincrement=True),
-            sa.Column('id_clinica', sa.BigInteger(), ForeignKey('clinicas.id_clinica'), nullable=False),
-            sa.Column('id_usuario', sa.BigInteger(), ForeignKey('usuarios.id_usuario'), nullable=False),
-            sa.Column('tabla_afectada', sa.String(length=150), nullable=True),
-            sa.Column('registro_id', sa.BigInteger(), nullable=True),
-            sa.Column('accion', sa.String(length=50), nullable=False),
-            sa.Column('descripcion', sa.Text, nullable=True),
-            sa.Column('datos_anteriores', sa.Text, nullable=True),
-            sa.Column('datos_nuevos', sa.Text, nullable=True),
-            sa.Column('direccion_ip', sa.String(length=45), nullable=True),
-            sa.Column('fecha_hora', sa.DateTime(timezone=True), server_default=func.now(), nullable=False),
-        ),
-    ]
-    
-    for table_def in tables_to_create:
-        # Usar el nombre de la tabla como clave
-        table_name = table_def.pop(0)  # First element es el nombre
-        # Reestructurar: el primero es el nombre, el resto son columnas
-        # Vamos a reescribir esto de forma más sencilla
-        pass
-    
-    # En lugar de eso, usaremos un enfoque más simple:
     # Crear tablas solo si no existen usando IF NOT EXISTS
     # y agregar columnas a usuarios si faltan
     
     # Agregar columnas id_clinica e id_rol a usuarios si no existen
-    with op.get_bind() as conn:
-        insp = inspect(conn)
-        existing_cols = [c['name'] for c in insp.get_columns('usuarios')]
-        if 'id_clinica' not in existing_cols:
-            op.add_column('usuarios', sa.Column('id_clinica', sa.BigInteger(), sa.ForeignKey('clinicas.id_clinica'), nullable=False))
-        if 'id_rol' not in existing_cols:
-            op.add_column('usuarios', sa.Column('id_rol', sa.BigInteger(), sa.ForeignKey('roles.id_rol'), nullable=False))
+    conn = op.get_bind()
+    insp = inspect(conn)
+    existing_cols = [c['name'] for c in insp.get_columns('usuarios')]
+    if 'id_clinica' not in existing_cols:
+        op.add_column('usuarios', sa.Column('id_clinica', sa.BigInteger(), sa.ForeignKey('clinicas.id_clinica'), nullable=True))
+    if 'id_rol' not in existing_cols:
+        op.add_column('usuarios', sa.Column('id_rol', sa.BigInteger(), sa.ForeignKey('roles.id_rol'), nullable=True))
     
     # Crear tablas solo si no existen (usando SQL raw con IF NOT EXISTS)
     # Clinicas
@@ -165,35 +105,37 @@ def upgrade() -> None:
     # Ahora agregar las restricciones y índices que faltan
     # Agregar restricción única en nit de clinicas si no existe
     op.execute("""
-        DO \$\$
+        DO $$
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'clinicas_nit_key') THEN
-                CREATE UNIQUE INDEX clinitas_nit_key ON clinicas (nit);
+                CREATE UNIQUE INDEX IF NOT EXISTS clinitas_nit_key ON clinicas (nit);
             END IF;
-        END\$\$;
+        END$$;
     """)
     
-    # Agregar restricción única en numero_historia de historias_clinicas
+    # Agregar restricción única en numero_historia de historias_clinicas si la tabla existe
     op.execute("""
-        DO \$\$
+        DO $$
         BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'historias_clinicas_numero_historia_key') THEN
-                CREATE UNIQUE INDEX historias_clinicas_numero_historia_key ON historias_clinicas (numero_historia);
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'historias_clinicas') THEN
+                IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'historias_clinicas_numero_historia_key') THEN
+                    CREATE UNIQUE INDEX historias_clinicas_numero_historia_key ON historias_clinicas (numero_historia);
+                END IF;
             END IF;
-        END\$\$;
+        END$$;
     """)
     
 
 def downgrade() -> None:
     # Lógica reversa: eliminar las columnas agregadas y dropar tablas
-    with op.get_bind() as conn:
-        insp = inspect(conn)
-        # Verificar si las columnas existen antes de eliminarlas
-        existing_cols = [c['name'] for c in insp.get_columns('usuarios')]
-        if 'id_clinica' in existing_cols:
-            op.drop_column('usuarios', 'id_clinica')
-        if 'id_rol' in existing_cols:
-            op.drop_column('usuarios', 'id_rol')
+    conn = op.get_bind()
+    insp = inspect(conn)
+    # Verificar si las columnas existen antes de eliminarlas
+    existing_cols = [c['name'] for c in insp.get_columns('usuarios')]
+    if 'id_clinica' in existing_cols:
+        op.drop_column('usuarios', 'id_clinica')
+    if 'id_rol' in existing_cols:
+        op.drop_column('usuarios', 'id_rol')
     
     # Dropar tablas solo si existen
     op.execute("DROP TABLE IF EXISTS auditoria")
