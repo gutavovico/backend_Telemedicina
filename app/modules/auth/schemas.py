@@ -20,6 +20,8 @@ class UsuarioCreate(UsuarioBase):
 
 class UsuarioResponse(BaseModel):
     id_usuario: int
+    id_clinica: Optional[int] = None
+    id_rol: Optional[int] = None
     nombres: str
     apellidos: str
     correo: str
