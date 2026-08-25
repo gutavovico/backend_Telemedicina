@@ -8,6 +8,8 @@ class UsuarioBase(BaseModel):
     apellidos: str = Field(..., min_length=2, max_length=100, examples=["Pérez Gómez"])
     correo: EmailStr = Field(..., examples=["juan.perez@ejemplo.com"])
     telefono: Optional[str] = Field(None, max_length=20, examples=["+591 70000000"])
+    id_clinica: Optional[int] = Field(None, examples=[1])
+    id_rol: Optional[int] = Field(None, examples=[1])
     foto_perfil: Optional[str] = Field(None, max_length=500, examples=["https://ejemplo.com/fotos/avatar.jpg"])
     notificaciones_push: Optional[bool] = True
     notificaciones_email: Optional[bool] = True

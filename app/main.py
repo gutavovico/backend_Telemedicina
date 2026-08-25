@@ -5,6 +5,7 @@ from app.modules.auth.router import router as auth_router
 from app.modules.roles.router import router as roles_router
 from app.modules.users.router import router as users_router
 from app.modules.medicos.router import router as medicos_router, router_especialidades
+from app.modules.medical_records.router import router as medical_records_router
 
 app = FastAPI(
     title="Telemedicina API",
@@ -29,6 +30,7 @@ app.include_router(roles_router)
 app.include_router(users_router)
 app.include_router(medicos_router)
 app.include_router(router_especialidades)
+app.include_router(medical_records_router)
 
 
 @app.get("/", tags=["General"], summary="Health Check")
