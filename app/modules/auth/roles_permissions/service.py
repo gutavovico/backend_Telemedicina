@@ -1,9 +1,7 @@
-from typing import Any
-
+from typing import Any, List, Optional
 from fastapi import HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
-
 from app.modules.auth.models import Clinica, Permiso, Rol, RolPermiso
 
 ROL_ESTADO_ACTIVO = "ACTIVO"
@@ -11,18 +9,42 @@ ROL_ESTADO_INACTIVO = "INACTIVO"
 PERMISO_ESTADO_ACTIVO = "ACTIVO"
 
 
-def list_roles(db: Session) -> list[dict[str, Any]]:
-    roles = db.query(Rol).options(joinedload(Rol.permisos)).order_by(Rol.id_rol.asc()).all()
+def _serialize_role(role: Rol) -> dict[str, Any]:
+    return {
+        "id_rol": role.id_rol,
+        "id_clinica": role.id_clinica,
+        "tenant_id": str(role.id_clinica) if role.id_clinica else None,
+        "nombre": role.nombre,
+        "descripcion": role.descripcion,
+        "estado": role.estado,
+    }
+
+
+def _serialize_permission(permission: Permiso) -> dict[str, Any]:
+    return {
+        "id_permiso": permission.id_permiso,
+        "codigo": f"{permission.modulo.upper()}_{permission.accion.upper()}",
+        "nombre": permission.nombre,
+        "descripcion": permission.descripcion,
+        "modulo": permission.modulo,
+        "accion": permission.accion,
+        "estado": permission.estado,
+    }
+
+
+def list_roles(db: Session, tenant_id: Optional[int] = None) -> list[dict[str, Any]]:
+    query = db.query(Rol).options(joinedload(Rol.permisos))
+    if tenant_id is not None:
+        query = query.filter((Rol.id_clinica == tenant_id) | (Rol.id_clinica.is_(None)))
+    roles = query.order_by(Rol.id_rol.asc()).all()
     return [_serialize_role(role) for role in roles]
 
 
-def get_role_or_404(db: Session, id_rol: int) -> Rol:
-    role = (
-        db.query(Rol)
-        .options(joinedload(Rol.permisos))
-        .filter(Rol.id_rol == id_rol)
-        .first()
-    )
+def get_role_or_404(db: Session, id_rol: int, tenant_id: Optional[int] = None) -> Rol:
+    query = db.query(Rol).options(joinedload(Rol.permisos)).filter(Rol.id_rol == id_rol)
+    if tenant_id is not None:
+        query = query.filter((Rol.id_clinica == tenant_id) | (Rol.id_clinica.is_(None)))
+    role = query.first()
     if not role:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -31,23 +53,24 @@ def get_role_or_404(db: Session, id_rol: int) -> Rol:
     return role
 
 
-def get_role_detail(db: Session, id_rol: int) -> dict[str, Any]:
-    return _serialize_role(get_role_or_404(db, id_rol))
+def get_role_detail(db: Session, id_rol: int, tenant_id: Optional[int] = None) -> dict[str, Any]:
+    return _serialize_role(get_role_or_404(db, id_rol, tenant_id))
 
 
-def create_role(db: Session, role_data: dict[str, Any]) -> dict[str, Any]:
+def create_role(db: Session, role_data: dict[str, Any], current_tenant_id: Optional[int] = None) -> dict[str, Any]:
+    target_clinica = current_tenant_id if current_tenant_id is not None else role_data.get("id_clinica")
     normalized_name = role_data["nombre"].strip()
     normalized_state = _normalize_role_state(role_data.get("estado", ROL_ESTADO_ACTIVO))
 
-    if role_data.get("id_clinica") is not None:
-        _validate_clinica_exists(db, role_data["id_clinica"])
+    if target_clinica is not None:
+        _validate_clinica_exists(db, target_clinica)
 
-    _ensure_role_name_unique(db, normalized_name, role_data.get("id_clinica"))
+    _ensure_role_name_unique(db, normalized_name, target_clinica)
 
     role = Rol(
-        id_clinica=role_data.get("id_clinica"),
+        id_clinica=target_clinica,
         nombre=normalized_name,
-        descripcion=_strip_optional(role_data.get("descripcion")),
+        descripcion=role_data.get("descripcion", "").strip() or None if role_data.get("descripcion") else None,
         estado=normalized_state,
     )
     db.add(role)
@@ -56,11 +79,11 @@ def create_role(db: Session, role_data: dict[str, Any]) -> dict[str, Any]:
     return _serialize_role(role)
 
 
-def update_role(db: Session, id_rol: int, role_data: dict[str, Any]) -> dict[str, Any]:
-    role = get_role_or_404(db, id_rol)
+def update_role(db: Session, id_rol: int, role_data: dict[str, Any], current_tenant_id: Optional[int] = None) -> dict[str, Any]:
+    role = get_role_or_404(db, id_rol, current_tenant_id)
     update_data = dict(role_data)
 
-    target_clinica = update_data.get("id_clinica", role.id_clinica)
+    target_clinica = current_tenant_id if current_tenant_id is not None else update_data.get("id_clinica", role.id_clinica)
     if target_clinica is not None:
         _validate_clinica_exists(db, target_clinica)
 
@@ -70,8 +93,8 @@ def update_role(db: Session, id_rol: int, role_data: dict[str, Any]) -> dict[str
         role.nombre = normalized_name
 
     if "descripcion" in update_data:
-        role.descripcion = _strip_optional(update_data["descripcion"])
-    if "id_clinica" in update_data:
+        role.descripcion = update_data["descripcion"].strip() or None if update_data.get("descripcion") else None
+    if "id_clinica" in update_data and current_tenant_id is None:
         role.id_clinica = target_clinica
     if "estado" in update_data:
         role.estado = _normalize_role_state(update_data["estado"])
@@ -82,8 +105,8 @@ def update_role(db: Session, id_rol: int, role_data: dict[str, Any]) -> dict[str
     return _serialize_role(role)
 
 
-def set_role_status(db: Session, id_rol: int, activo: bool) -> dict[str, Any]:
-    role = get_role_or_404(db, id_rol)
+def set_role_status(db: Session, id_rol: int, activo: bool, current_tenant_id: Optional[int] = None) -> dict[str, Any]:
+    role = get_role_or_404(db, id_rol, current_tenant_id)
     role.estado = ROL_ESTADO_ACTIVO if activo else ROL_ESTADO_INACTIVO
     db.add(role)
     db.commit()
@@ -96,14 +119,14 @@ def list_permissions(db: Session) -> list[dict[str, Any]]:
     return [_serialize_permission(permission) for permission in permissions]
 
 
-def get_role_permissions(db: Session, id_rol: int) -> list[dict[str, Any]]:
-    role = get_role_or_404(db, id_rol)
+def get_role_permissions(db: Session, id_rol: int, current_tenant_id: Optional[int] = None) -> list[dict[str, Any]]:
+    role = get_role_or_404(db, id_rol, current_tenant_id)
     permissions = sorted(role.permisos, key=lambda permission: permission.id_permiso)
     return [_serialize_permission(permission) for permission in permissions]
 
 
-def replace_role_permissions(db: Session, id_rol: int, id_permisos: list[int]) -> list[dict[str, Any]]:
-    role = get_role_or_404(db, id_rol)
+def replace_role_permissions(db: Session, id_rol: int, id_permisos: List[int], current_tenant_id: Optional[int] = None) -> list[dict[str, Any]]:
+    role = get_role_or_404(db, id_rol, current_tenant_id)
     if role.estado != ROL_ESTADO_ACTIVO:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -116,7 +139,7 @@ def replace_role_permissions(db: Session, id_rol: int, id_permisos: list[int]) -
         for permission in db.query(Permiso).filter(Permiso.id_permiso.in_(unique_permission_ids)).all()
     } if unique_permission_ids else {}
 
-    missing_ids = [permission_id for permission_id in unique_permission_ids if permission_id not in permissions_by_id]
+    missing_ids = [pid for pid in unique_permission_ids if pid not in permissions_by_id]
     if missing_ids:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -124,9 +147,7 @@ def replace_role_permissions(db: Session, id_rol: int, id_permisos: list[int]) -
         )
 
     inactive_permissions = [
-        permission.id_permiso
-        for permission in permissions_by_id.values()
-        if permission.estado != PERMISO_ESTADO_ACTIVO
+        pid for pid, perm in permissions_by_id.items() if perm.estado != PERMISO_ESTADO_ACTIVO
     ]
     if inactive_permissions:
         raise HTTPException(
@@ -142,14 +163,14 @@ def replace_role_permissions(db: Session, id_rol: int, id_permisos: list[int]) -
     target_ids = set(unique_permission_ids)
     current_ids = set(current_relations.keys())
 
-    for permission_id in current_ids - target_ids:
-        db.delete(current_relations[permission_id])
+    for pid in current_ids - target_ids:
+        db.delete(current_relations[pid])
 
-    for permission_id in target_ids - current_ids:
-        db.add(RolPermiso(id_rol=id_rol, id_permiso=permission_id))
+    for pid in target_ids - current_ids:
+        db.add(RolPermiso(id_rol=id_rol, id_permiso=pid))
 
     db.commit()
-    return get_role_permissions(db, id_rol)
+    return get_role_permissions(db, id_rol, current_tenant_id)
 
 
 def _validate_clinica_exists(db: Session, id_clinica: int) -> None:
@@ -164,8 +185,8 @@ def _validate_clinica_exists(db: Session, id_clinica: int) -> None:
 def _ensure_role_name_unique(
     db: Session,
     nombre: str,
-    id_clinica: int | None,
-    exclude_role_id: int | None = None,
+    id_clinica: Optional[int],
+    exclude_role_id: Optional[int] = None,
 ) -> None:
     query = db.query(Rol).filter(func.lower(Rol.nombre) == nombre.lower())
     if id_clinica is None:
@@ -175,8 +196,7 @@ def _ensure_role_name_unique(
     if exclude_role_id is not None:
         query = query.filter(Rol.id_rol != exclude_role_id)
 
-    existing_role = query.first()
-    if existing_role:
+    if query.first():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Ya existe un rol con ese nombre para la clínica indicada.",
@@ -191,31 +211,3 @@ def _normalize_role_state(estado: str) -> str:
             detail="Estado de rol no válido.",
         )
     return normalized
-
-
-def _strip_optional(value: str | None) -> str | None:
-    if value is None:
-        return None
-    stripped = value.strip()
-    return stripped or None
-
-
-def _serialize_role(role: Rol) -> dict[str, Any]:
-    return {
-        "id_rol": role.id_rol,
-        "id_clinica": role.id_clinica,
-        "nombre": role.nombre,
-        "descripcion": role.descripcion,
-        "estado": role.estado,
-    }
-
-
-def _serialize_permission(permission: Permiso) -> dict[str, Any]:
-    return {
-        "id_permiso": permission.id_permiso,
-        "nombre": permission.nombre,
-        "descripcion": permission.descripcion,
-        "modulo": permission.modulo,
-        "accion": permission.accion,
-        "estado": permission.estado,
-    }

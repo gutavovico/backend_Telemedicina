@@ -45,6 +45,10 @@ class Medico(Base):
         cascade="all, delete-orphan",
     )
 
+    @property
+    def tenant_id(self):
+        return self.usuario.id_clinica if self.usuario else None
+
     def __repr__(self) -> str:
         return f"<Medico(id={self.id_medico}, id_usuario={self.id_usuario}, matricula='{self.matricula_profesional}', estado='{self.estado}')>"
 

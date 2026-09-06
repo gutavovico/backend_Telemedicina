@@ -1,11 +1,9 @@
 from typing import List, Optional, Tuple
-
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session, joinedload
-
 from app.modules.auth.models import Usuario
-from app.modules.medicos.models import Especialidad, Medico, MedicoEspecialidad
-from app.modules.medicos.schemas import (
+from app.modules.appointments.models import Especialidad, Medico, MedicoEspecialidad
+from app.modules.appointments.doctor_profile.schemas import (
     AsignacionEspecialidad,
     EspecialidadCreate,
     EspecialidadUpdate,
@@ -16,12 +14,7 @@ from app.modules.medicos.schemas import (
 ESTADOS_VALIDOS = ("activo", "inactivo")
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def _get_especialidades_por_ids(db: Session, ids: List[int]) -> List[Especialidad]:
-    """Valida que todos los ids de especialidad existan y estén activos."""
     if len(set(ids)) != len(ids):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -50,17 +43,17 @@ def _cargar_relaciones(query):
     )
 
 
-# ---------------------------------------------------------------------------
-# Médicos
-# ---------------------------------------------------------------------------
-
-def crear_medico(db: Session, medico_data: MedicoCreate) -> Medico:
-    """Crea el perfil profesional de un usuario existente (regla 1:1)."""
+def crear_medico(db: Session, medico_data: MedicoCreate, current_tenant_id: Optional[int] = None) -> Medico:
     usuario = db.query(Usuario).filter(Usuario.id_usuario == medico_data.id_usuario).first()
     if not usuario:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Usuario con id {medico_data.id_usuario} no encontrado",
+        )
+    if current_tenant_id is not None and usuario.id_clinica != current_tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="El usuario no pertenece a la clínica actual",
         )
     if usuario.estado != "activo":
         raise HTTPException(
@@ -99,7 +92,6 @@ def crear_medico(db: Session, medico_data: MedicoCreate) -> Medico:
         estado="activo",
     )
 
-    # La primera especialidad de la lista queda como principal
     for idx, esp in enumerate(especialidades):
         nuevo_medico.especialidades.append(
             MedicoEspecialidad(
@@ -121,9 +113,12 @@ def listar_medicos(
     estado: Optional[str] = None,
     skip: int = 0,
     limit: int = 20,
+    current_tenant_id: Optional[int] = None,
 ) -> Tuple[int, List[Medico]]:
-    """Lista médicos con filtros y paginación. Devuelve (total, items)."""
     query = db.query(Medico)
+
+    if current_tenant_id is not None:
+        query = query.join(Usuario).filter(Usuario.id_clinica == current_tenant_id)
 
     if estado is not None:
         query = query.filter(Medico.estado == estado)
@@ -131,7 +126,9 @@ def listar_medicos(
         query = query.filter(Medico.estado == "activo")
 
     if nombre:
-        query = query.join(Usuario).filter(
+        if current_tenant_id is None:
+            query = query.join(Usuario)
+        query = query.filter(
             (Usuario.nombres.ilike(f"%{nombre}%"))
             | (Usuario.apellidos.ilike(f"%{nombre}%"))
             | (Usuario.correo.ilike(f"%{nombre}%"))
@@ -154,12 +151,11 @@ def listar_medicos(
     return total, items
 
 
-def obtener_medico(db: Session, id_medico: int) -> Medico:
-    medico = (
-        _cargar_relaciones(db.query(Medico))
-        .filter(Medico.id_medico == id_medico)
-        .first()
-    )
+def obtener_medico(db: Session, id_medico: int, current_tenant_id: Optional[int] = None) -> Medico:
+    query = _cargar_relaciones(db.query(Medico)).filter(Medico.id_medico == id_medico)
+    if current_tenant_id is not None:
+        query = query.join(Usuario).filter(Usuario.id_clinica == current_tenant_id)
+    medico = query.first()
     if not medico:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -168,12 +164,11 @@ def obtener_medico(db: Session, id_medico: int) -> Medico:
     return medico
 
 
-def obtener_medico_por_usuario(db: Session, id_usuario: int) -> Medico:
-    medico = (
-        _cargar_relaciones(db.query(Medico))
-        .filter(Medico.id_usuario == id_usuario)
-        .first()
-    )
+def obtener_medico_por_usuario(db: Session, id_usuario: int, current_tenant_id: Optional[int] = None) -> Medico:
+    query = _cargar_relaciones(db.query(Medico)).filter(Medico.id_usuario == id_usuario)
+    if current_tenant_id is not None:
+        query = query.join(Usuario).filter(Usuario.id_clinica == current_tenant_id)
+    medico = query.first()
     if not medico:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -182,8 +177,8 @@ def obtener_medico_por_usuario(db: Session, id_usuario: int) -> Medico:
     return medico
 
 
-def actualizar_medico(db: Session, id_medico: int, datos: MedicoUpdate) -> Medico:
-    medico = obtener_medico(db, id_medico)
+def actualizar_medico(db: Session, id_medico: int, datos: MedicoUpdate, current_tenant_id: Optional[int] = None) -> Medico:
+    medico = obtener_medico(db, id_medico, current_tenant_id)
 
     if datos.matricula_profesional and datos.matricula_profesional != medico.matricula_profesional:
         duplicada = (
@@ -209,20 +204,16 @@ def actualizar_medico(db: Session, id_medico: int, datos: MedicoUpdate) -> Medic
     return medico
 
 
-def cambiar_estado_medico(db: Session, id_medico: int, nuevo_estado: str) -> Medico:
-    medico = obtener_medico(db, id_medico)
+def cambiar_estado_medico(db: Session, id_medico: int, nuevo_estado: str, current_tenant_id: Optional[int] = None) -> Medico:
+    medico = obtener_medico(db, id_medico, current_tenant_id)
     medico.estado = nuevo_estado
     db.commit()
     db.refresh(medico)
     return medico
 
 
-# ---------------------------------------------------------------------------
-# Especialidades de un médico
-# ---------------------------------------------------------------------------
-
-def asignar_especialidad(db: Session, id_medico: int, asignacion: AsignacionEspecialidad) -> Medico:
-    medico = obtener_medico(db, id_medico)
+def asignar_especialidad(db: Session, id_medico: int, asignacion: AsignacionEspecialidad, current_tenant_id: Optional[int] = None) -> Medico:
+    medico = obtener_medico(db, id_medico, current_tenant_id)
 
     especialidad = (
         db.query(Especialidad)
@@ -254,7 +245,6 @@ def asignar_especialidad(db: Session, id_medico: int, asignacion: AsignacionEspe
             detail=f"El médico ya tiene asignada la especialidad '{especialidad.nombre}'",
         )
 
-    # Regla: solo una especialidad principal por médico
     if asignacion.es_principal:
         db.query(MedicoEspecialidad).filter(
             MedicoEspecialidad.id_medico == id_medico,
@@ -272,8 +262,8 @@ def asignar_especialidad(db: Session, id_medico: int, asignacion: AsignacionEspe
     return medico
 
 
-def quitar_especialidad(db: Session, id_medico: int, id_especialidad: int) -> Medico:
-    medico = obtener_medico(db, id_medico)
+def quitar_especialidad(db: Session, id_medico: int, id_especialidad: int, current_tenant_id: Optional[int] = None) -> Medico:
+    medico = obtener_medico(db, id_medico, current_tenant_id)
     asociacion = (
         db.query(MedicoEspecialidad)
         .filter(
@@ -293,10 +283,6 @@ def quitar_especialidad(db: Session, id_medico: int, id_especialidad: int) -> Me
     db.refresh(medico)
     return medico
 
-
-# ---------------------------------------------------------------------------
-# Catálogo de especialidades
-# ---------------------------------------------------------------------------
 
 def listar_especialidades(db: Session, solo_activas: bool = True) -> List[Especialidad]:
     query = db.query(Especialidad)

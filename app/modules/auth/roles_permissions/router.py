@@ -1,10 +1,10 @@
+from typing import List, Optional
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
-
 from app.core.database import get_db
-from app.modules.auth.dependencies import require_admin
+from app.modules.auth.dependencies import get_current_tenant_id, require_admin
 from app.modules.auth.models import Usuario
-from app.modules.roles.schemas import (
+from app.modules.auth.roles_permissions.schemas import (
     PermissionResponse,
     RoleCreate,
     RolePermissionsUpdate,
@@ -12,7 +12,7 @@ from app.modules.roles.schemas import (
     RoleStatusUpdate,
     RoleUpdate,
 )
-from app.modules.roles.service import (
+from app.modules.auth.roles_permissions.service import (
     create_role,
     get_role_detail,
     get_role_permissions,
@@ -23,19 +23,20 @@ from app.modules.roles.service import (
     update_role,
 )
 
-router = APIRouter(tags=["Roles y Permisos"])
+router = APIRouter(tags=["Roles y Permisos (CU26)"])
 
 
 @router.get(
     "/roles",
-    response_model=list[RoleResponse],
+    response_model=List[RoleResponse],
     summary="Listar roles",
 )
 def get_roles(
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_admin),
+    admin_user: Usuario = Depends(require_admin),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    return list_roles(db)
+    return list_roles(db, tenant_id=tenant_id)
 
 
 @router.get(
@@ -46,9 +47,10 @@ def get_roles(
 def get_role(
     id_rol: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_admin),
+    admin_user: Usuario = Depends(require_admin),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    return get_role_detail(db, id_rol)
+    return get_role_detail(db, id_rol, tenant_id=tenant_id)
 
 
 @router.post(
@@ -60,9 +62,10 @@ def get_role(
 def post_role(
     role_data: RoleCreate,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_admin),
+    admin_user: Usuario = Depends(require_admin),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    return create_role(db, role_data.model_dump())
+    return create_role(db, role_data.model_dump(), current_tenant_id=tenant_id)
 
 
 @router.put(
@@ -74,9 +77,10 @@ def put_role(
     id_rol: int,
     role_data: RoleUpdate,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_admin),
+    admin_user: Usuario = Depends(require_admin),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    return update_role(db, id_rol, role_data.model_dump(exclude_unset=True))
+    return update_role(db, id_rol, role_data.model_dump(exclude_unset=True), current_tenant_id=tenant_id)
 
 
 @router.patch(
@@ -88,45 +92,48 @@ def patch_role_status(
     id_rol: int,
     status_data: RoleStatusUpdate,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_admin),
+    admin_user: Usuario = Depends(require_admin),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    return set_role_status(db, id_rol, status_data.activo)
+    return set_role_status(db, id_rol, status_data.activo, current_tenant_id=tenant_id)
 
 
 @router.get(
     "/permissions",
-    response_model=list[PermissionResponse],
+    response_model=List[PermissionResponse],
     summary="Listar permisos",
 )
 def get_permissions(
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_admin),
+    admin_user: Usuario = Depends(require_admin),
 ):
     return list_permissions(db)
 
 
 @router.get(
     "/roles/{id_rol}/permissions",
-    response_model=list[PermissionResponse],
+    response_model=List[PermissionResponse],
     summary="Obtener permisos de un rol",
 )
 def get_permissions_for_role(
     id_rol: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_admin),
+    admin_user: Usuario = Depends(require_admin),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    return get_role_permissions(db, id_rol)
+    return get_role_permissions(db, id_rol, current_tenant_id=tenant_id)
 
 
 @router.put(
     "/roles/{id_rol}/permissions",
-    response_model=list[PermissionResponse],
+    response_model=List[PermissionResponse],
     summary="Reemplazar permisos de un rol",
 )
 def put_permissions_for_role(
     id_rol: int,
     payload: RolePermissionsUpdate,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_admin),
+    admin_user: Usuario = Depends(require_admin),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    return replace_role_permissions(db, id_rol, payload.id_permisos)
+    return replace_role_permissions(db, id_rol, payload.id_permisos, current_tenant_id=tenant_id)

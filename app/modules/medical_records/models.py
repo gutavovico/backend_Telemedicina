@@ -20,6 +20,7 @@ class Paciente(Base):
     __tablename__ = "pacientes"
 
     id_paciente = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
+    id_clinica = Column(BigInteger().with_variant(Integer, "sqlite"), ForeignKey("clinicas.id_clinica"), nullable=True, index=True)
     id_usuario = Column(BigInteger().with_variant(Integer, "sqlite"), ForeignKey("usuarios.id_usuario", ondelete="SET NULL"), unique=True, nullable=True, index=True)
     
     nombres = Column(String(100), nullable=False)
@@ -49,12 +50,15 @@ class Paciente(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    # Relación opcional con la cuenta de usuario del paciente
     usuario = relationship("Usuario", backref="paciente_perfil", lazy="joined")
 
     __table_args__ = (
         UniqueConstraint("ci", "complemento", name="uq_pacientes_ci_complemento"),
     )
+
+    @property
+    def tenant_id(self):
+        return self.id_clinica
 
     def __repr__(self) -> str:
         return f"<Paciente(id={self.id_paciente}, ci='{self.ci}', nombres='{self.nombres} {self.apellidos}')>"

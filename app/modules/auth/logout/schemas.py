@@ -1,0 +1,5 @@
+from pydantic import BaseModel, Field
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str = Field(..., min_length=10, description="Refresh token que se desea revocar")

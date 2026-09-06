@@ -96,5 +96,39 @@ class Usuario(Base):
     clinica = relationship("Clinica", back_populates="usuarios")
     rol = relationship("Rol", back_populates="usuarios")
 
+    @property
+    def tenant_id(self):
+        return self.id_clinica
+
     def __repr__(self) -> str:
         return f"<Usuario(id={self.id_usuario}, correo='{self.correo}', estado='{self.estado}')>"
+
+
+class TokenBlacklist(Base):
+    __tablename__ = "token_blacklist"
+
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
+    token = Column(String(500), unique=True, nullable=False, index=True)
+    revoked_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<TokenBlacklist(id={self.id}, revoked_at='{self.revoked_at}')>"
+
+
+class Auditoria(Base):
+    __tablename__ = "auditoria"
+
+    id_auditoria = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
+    id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=False)
+    id_usuario = Column(BigInteger, ForeignKey("usuarios.id_usuario"), nullable=False)
+    tabla_afectada = Column(String(150), nullable=True)
+    registro_id = Column(BigInteger, nullable=True)
+    accion = Column(String(50), nullable=False)
+    descripcion = Column(String, nullable=True)
+    datos_anteriores = Column(String, nullable=True)
+    datos_nuevos = Column(String, nullable=True)
+    direccion_ip = Column(String(45), nullable=True)
+    fecha_hora = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<Auditoria(id={self.id_auditoria}, accion='{self.accion}', tabla='{self.tabla_afectada}')>"

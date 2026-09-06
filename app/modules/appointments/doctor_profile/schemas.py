@@ -81,7 +81,6 @@ class EspecialidadMedico(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def extraer_nombre(cls, data):
-        # MedicoEspecialidad no tiene 'nombre' directo: viene por la relación 'especialidad'
         if hasattr(data, "especialidad") and getattr(data, "especialidad", None) is not None:
             if not isinstance(data, dict):
                 return {
@@ -95,6 +94,7 @@ class EspecialidadMedico(BaseModel):
 class MedicoResponse(BaseModel):
     id_medico: int
     id_usuario: int
+    tenant_id: Optional[str] = None
     matricula_profesional: str
     descripcion_profesional: Optional[str] = None
     experiencia: Optional[str] = None

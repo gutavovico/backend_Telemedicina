@@ -29,7 +29,8 @@ def _send_smtp(correo: str, codigo: str) -> None:
     """Envía el correo a través de SMTP configurado en las settings."""
     msg = EmailMessage()
     msg["Subject"] = "Recuperación de contraseña - Hospital San Juan de Dios"
-    msg["From"] = settings.SMTP_FROM
+    sender_addr = settings.SMTP_USER if settings.SMTP_USER else settings.SMTP_FROM
+    msg["From"] = f"{settings.EMAIL_FROM_NAME} <{sender_addr}>"
     msg["To"] = correo
     msg.set_content(
         "Hola,\n\n"
