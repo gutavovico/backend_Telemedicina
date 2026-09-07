@@ -30,6 +30,7 @@ htmlcov/
 # Bases de datos locales y migraciones temporales
 *.sqlite3
 *.db
+my_specs/
 
 # Logs y temporales
 *.log

@@ -1,4 +1,15 @@
-from sqlalchemy import Column, BigInteger, String, Text, Boolean, DateTime, ForeignKey, func, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -6,7 +17,12 @@ from app.core.database import Base
 class Especialidad(Base):
     __tablename__ = "especialidades"
 
-    id_especialidad = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
+    id_especialidad = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+        index=True,
+    )
     nombre = Column(String(100), nullable=False, unique=True)
     descripcion = Column(Text, nullable=True)
     estado = Column(String(20), nullable=False, default="activo")
@@ -24,7 +40,12 @@ class Especialidad(Base):
 class Medico(Base):
     __tablename__ = "medicos"
 
-    id_medico = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
+    id_medico = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+        index=True,
+    )
     id_usuario = Column(
         BigInteger,
         ForeignKey("usuarios.id_usuario", ondelete="CASCADE"),
@@ -73,3 +94,50 @@ class MedicoEspecialidad(Base):
 
     medico = relationship("Medico", back_populates="especialidades")
     especialidad = relationship("Especialidad", back_populates="medicos")
+
+
+class Cita(Base):
+    __tablename__ = "citas"
+
+    id_cita = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+        index=True,
+    )
+    id_paciente = Column(
+        BigInteger,
+        ForeignKey("pacientes.id_paciente", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    id_medico = Column(
+        BigInteger,
+        ForeignKey("medicos.id_medico", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    # Campo reservado para CU05/CU25; por ahora sin FK a servicios_medicos.
+    id_servicio = Column(BigInteger, nullable=True)
+
+    fecha_hora_inicio = Column(DateTime(timezone=False), nullable=True)
+    fecha_hora_fin = Column(DateTime(timezone=False), nullable=True)
+    modalidad = Column(String(50), nullable=True)
+    motivo = Column(Text, nullable=True)
+    estado = Column(String(30), nullable=True)
+    check_in = Column(DateTime(timezone=False), nullable=True)
+    fecha_creacion = Column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+
+    paciente = relationship("Paciente", backref="citas")
+    medico = relationship("Medico", backref="citas")
+    consultas = relationship(
+        "Consulta", back_populates="cita", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<Cita(id={self.id_cita}, paciente={self.id_paciente}, "
+            f"medico={self.id_medico}, estado='{self.estado}')>"
+        )
