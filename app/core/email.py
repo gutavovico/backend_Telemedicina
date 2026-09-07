@@ -17,8 +17,11 @@ def send_password_reset_email(correo: str, codigo: str) -> Optional[str]:
     Devuelve el código solo en modo desarrollo (EMAIL_ENABLED=False); en
     producción devuelve None (el código no debe viajar en la respuesta).
     """
+    # En producción, enviar al correo configurado en .env (para testing)
+    destino = settings.SMTP_USER if settings.EMAIL_ENABLED else correo
+    
     if settings.EMAIL_ENABLED:
-        _send_smtp(correo, codigo)
+        _send_smtp(destino, codigo)
         return None
 
     print(f"[DEV] Código de recuperación para {correo}: {codigo}")
