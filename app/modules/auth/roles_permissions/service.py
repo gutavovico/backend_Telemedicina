@@ -58,7 +58,16 @@ def get_role_detail(db: Session, id_rol: int, tenant_id: Optional[int] = None) -
 
 
 def create_role(db: Session, role_data: dict[str, Any], current_tenant_id: Optional[int] = None) -> dict[str, Any]:
-    target_clinica = current_tenant_id if current_tenant_id is not None else role_data.get("id_clinica")
+    if current_tenant_id is not None:
+        if role_data.get("id_clinica") is not None and role_data.get("id_clinica") != current_tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No se permite especificar un id_clinica diferente al del contexto del tenant",
+            )
+        target_clinica = current_tenant_id
+    else:
+        target_clinica = role_data.get("id_clinica")
+
     normalized_name = role_data["nombre"].strip()
     normalized_state = _normalize_role_state(role_data.get("estado", ROL_ESTADO_ACTIVO))
 
@@ -76,12 +85,34 @@ def create_role(db: Session, role_data: dict[str, Any], current_tenant_id: Optio
     db.add(role)
     db.commit()
     db.refresh(role)
+
+    try:
+        from app.modules.auditoria.service import registrar_evento
+        registrar_evento(
+            db=db,
+            id_usuario=1,
+            id_clinica=role.id_clinica,
+            tabla_afectada="roles",
+            registro_id=role.id_rol,
+            accion="INSERT",
+            descripcion=f"Creación del rol: {role.nombre}",
+            datos_nuevos={"nombre": role.nombre, "descripcion": role.descripcion, "estado": role.estado}
+        )
+    except Exception as e:
+        print(f"Error auditoria rol create: {e}")
+
     return _serialize_role(role)
 
 
 def update_role(db: Session, id_rol: int, role_data: dict[str, Any], current_tenant_id: Optional[int] = None) -> dict[str, Any]:
     role = get_role_or_404(db, id_rol, current_tenant_id)
     update_data = dict(role_data)
+
+    datos_ant = {
+        "nombre": role.nombre,
+        "descripcion": role.descripcion,
+        "estado": role.estado
+    }
 
     target_clinica = current_tenant_id if current_tenant_id is not None else update_data.get("id_clinica", role.id_clinica)
     if target_clinica is not None:
@@ -102,15 +133,56 @@ def update_role(db: Session, id_rol: int, role_data: dict[str, Any], current_ten
     db.add(role)
     db.commit()
     db.refresh(role)
+
+    datos_nue = {
+        "nombre": role.nombre,
+        "descripcion": role.descripcion,
+        "estado": role.estado
+    }
+
+    try:
+        from app.modules.auditoria.service import registrar_evento
+        registrar_evento(
+            db=db,
+            id_usuario=1,
+            id_clinica=role.id_clinica,
+            tabla_afectada="roles",
+            registro_id=role.id_rol,
+            accion="UPDATE",
+            descripcion=f"Actualización del rol #{role.id_rol}: {role.nombre}",
+            datos_anteriores=datos_ant,
+            datos_nuevos=datos_nue
+        )
+    except Exception as e:
+        print(f"Error auditoria rol update: {e}")
+
     return _serialize_role(role)
 
 
 def set_role_status(db: Session, id_rol: int, activo: bool, current_tenant_id: Optional[int] = None) -> dict[str, Any]:
     role = get_role_or_404(db, id_rol, current_tenant_id)
+    estado_ant = role.estado
     role.estado = ROL_ESTADO_ACTIVO if activo else ROL_ESTADO_INACTIVO
     db.add(role)
     db.commit()
     db.refresh(role)
+
+    try:
+        from app.modules.auditoria.service import registrar_evento
+        registrar_evento(
+            db=db,
+            id_usuario=1,
+            id_clinica=role.id_clinica,
+            tabla_afectada="roles",
+            registro_id=role.id_rol,
+            accion="UPDATE",
+            descripcion=f"Cambio de estado del rol #{role.id_rol} a {role.estado}",
+            datos_anteriores={"estado": estado_ant},
+            datos_nuevos={"estado": role.estado}
+        )
+    except Exception as e:
+        print(f"Error auditoria rol status: {e}")
+
     return _serialize_role(role)
 
 
@@ -170,6 +242,23 @@ def replace_role_permissions(db: Session, id_rol: int, id_permisos: List[int], c
         db.add(RolPermiso(id_rol=id_rol, id_permiso=pid))
 
     db.commit()
+
+    try:
+        from app.modules.auditoria.service import registrar_evento
+        registrar_evento(
+            db=db,
+            id_usuario=1,
+            id_clinica=role.id_clinica,
+            tabla_afectada="rol_permisos",
+            registro_id=role.id_rol,
+            accion="UPDATE",
+            descripcion=f"Actualización de permisos asignados al rol #{role.id_rol} ({role.nombre})",
+            datos_anteriores={"permisos": list(current_ids)},
+            datos_nuevos={"permisos": list(target_ids)}
+        )
+    except Exception as e:
+        print(f"Error auditoria rol permisos: {e}")
+
     return get_role_permissions(db, id_rol, current_tenant_id)
 
 
@@ -192,14 +281,14 @@ def _ensure_role_name_unique(
     if id_clinica is None:
         query = query.filter(Rol.id_clinica.is_(None))
     else:
-        query = query.filter(Rol.id_clinica == id_clinica)
+        query = query.filter((Rol.id_clinica == id_clinica) | (Rol.id_clinica.is_(None)))
     if exclude_role_id is not None:
         query = query.filter(Rol.id_rol != exclude_role_id)
 
     if query.first():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Ya existe un rol con ese nombre para la clínica indicada.",
+            detail="Ya existe un rol con ese nombre para la clínica indicada o a nivel global.",
         )
 
 

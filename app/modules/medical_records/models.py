@@ -58,7 +58,7 @@ class Paciente(Base):
 
     @property
     def tenant_id(self):
-        return self.id_clinica
+        return str(self.id_clinica) if self.id_clinica is not None else None
 
     def __repr__(self) -> str:
         return f"<Paciente(id={self.id_paciente}, ci='{self.ci}', nombres='{self.nombres} {self.apellidos}')>"

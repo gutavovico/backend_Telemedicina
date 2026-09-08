@@ -60,7 +60,15 @@ def get_user_detail(db: Session, id_usuario: int, tenant_id: Optional[int] = Non
 
 
 def create_admin_user(db: Session, user_data: AdminUserCreate, current_tenant_id: Optional[int] = None) -> dict[str, Any]:
-    target_clinica = current_tenant_id if current_tenant_id is not None else user_data.id_clinica
+    if current_tenant_id is not None:
+        if user_data.id_clinica is not None and user_data.id_clinica != current_tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No se permite especificar un id_clinica diferente al del contexto del tenant",
+            )
+        target_clinica = current_tenant_id
+    else:
+        target_clinica = user_data.id_clinica
 
     # Validación de duplicidad con scope de tenant
     query_existing = db.query(Usuario).filter(Usuario.correo == user_data.correo.lower().strip())
@@ -96,6 +104,22 @@ def create_admin_user(db: Session, user_data: AdminUserCreate, current_tenant_id
     db.commit()
     db.refresh(new_user)
     db.refresh(new_user, attribute_names=["rol"])
+
+    try:
+        from app.modules.auditoria.service import registrar_evento
+        registrar_evento(
+            db=db,
+            id_usuario=new_user.id_usuario,
+            id_clinica=new_user.id_clinica,
+            tabla_afectada="usuarios",
+            registro_id=new_user.id_usuario,
+            accion="INSERT",
+            descripcion=f"Creación de usuario: {new_user.nombres} {new_user.apellidos} ({new_user.correo})",
+            datos_nuevos={"nombres": new_user.nombres, "apellidos": new_user.apellidos, "correo": new_user.correo, "id_rol": new_user.id_rol}
+        )
+    except Exception as e:
+        print(f"Error registrando auditoria usuario create: {e}")
+
     return _serialize_user(new_user)
 
 
@@ -103,7 +127,26 @@ def update_admin_user(db: Session, id_usuario: int, user_data: AdminUserUpdate, 
     user = get_user_or_404(db, id_usuario, current_tenant_id)
     update_data = user_data.model_dump(exclude_unset=True)
 
-    target_clinica = current_tenant_id if current_tenant_id is not None else update_data.get("id_clinica", user.id_clinica)
+    # Capturar estado previo para auditoría
+    datos_anteriores = {
+        "nombres": user.nombres,
+        "apellidos": user.apellidos,
+        "correo": user.correo,
+        "telefono": user.telefono,
+        "id_rol": user.id_rol,
+        "estado": user.estado
+    }
+
+    if current_tenant_id is not None:
+        if "id_clinica" in update_data and update_data["id_clinica"] is not None and update_data["id_clinica"] != current_tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No se permite especificar un id_clinica diferente al del contexto del tenant",
+            )
+        target_clinica = current_tenant_id
+    else:
+        target_clinica = update_data.get("id_clinica", user.id_clinica)
+
     target_rol_id = update_data.get("id_rol", user.id_rol)
 
     if target_clinica is not None:
@@ -152,16 +195,60 @@ def update_admin_user(db: Session, id_usuario: int, user_data: AdminUserUpdate, 
     db.commit()
     db.refresh(user)
     db.refresh(user, attribute_names=["rol"])
+
+    datos_nuevos = {
+        "nombres": user.nombres,
+        "apellidos": user.apellidos,
+        "correo": user.correo,
+        "telefono": user.telefono,
+        "id_rol": user.id_rol,
+        "estado": user.estado
+    }
+
+    try:
+        from app.modules.auditoria.service import registrar_evento
+        registrar_evento(
+            db=db,
+            id_usuario=user.id_usuario,
+            id_clinica=user.id_clinica,
+            tabla_afectada="usuarios",
+            registro_id=user.id_usuario,
+            accion="UPDATE",
+            descripcion=f"Actualización de datos del usuario #{user.id_usuario}: {user.nombres} {user.apellidos}",
+            datos_anteriores=datos_anteriores,
+            datos_nuevos=datos_nuevos
+        )
+    except Exception as e:
+        print(f"Error registrando auditoria usuario update: {e}")
+
     return _serialize_user(user)
 
 
 def set_user_status(db: Session, id_usuario: int, activo: bool, current_tenant_id: Optional[int] = None) -> dict[str, Any]:
     user = get_user_or_404(db, id_usuario, current_tenant_id)
+    estado_previo = user.estado
     user.estado = USUARIO_ESTADO_ACTIVO if activo else USUARIO_ESTADO_INACTIVO
     db.add(user)
     db.commit()
     db.refresh(user)
     db.refresh(user, attribute_names=["rol"])
+
+    try:
+        from app.modules.auditoria.service import registrar_evento
+        registrar_evento(
+            db=db,
+            id_usuario=user.id_usuario,
+            id_clinica=user.id_clinica,
+            tabla_afectada="usuarios",
+            registro_id=user.id_usuario,
+            accion="UPDATE",
+            descripcion=f"Cambio de estado del usuario #{user.id_usuario} a {user.estado}",
+            datos_anteriores={"estado": estado_previo},
+            datos_nuevos={"estado": user.estado}
+        )
+    except Exception as e:
+        print(f"Error registrando auditoria usuario status: {e}")
+
     return _serialize_user(user)
 
 

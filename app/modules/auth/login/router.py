@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import create_access_token, create_refresh_token, decode_refresh_token
@@ -37,7 +37,7 @@ def register(user_data: UsuarioCreate, db: Session = Depends(get_db)):
     summary="Inicio de sesión",
     description="Autentica usuario y emite tokens JWT con claim tenant_id y token_version.",
 )
-def login(login_data: LoginRequest, db: Session = Depends(get_db)):
+def login(login_data: LoginRequest, request: Request, db: Session = Depends(get_db)):
     """Inicia sesión y genera access_token y refresh_token."""
     user = authenticate_user(db=db, correo=login_data.correo, password=login_data.password)
     if not user:
@@ -64,6 +64,25 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
 
     access_token = create_access_token(data=token_payload)
     refresh_token = create_refresh_token(data=token_payload)
+
+    try:
+        from app.modules.auditoria.service import registrar_evento
+        client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+        if client_ip and "," in client_ip:
+            client_ip = client_ip.split(",")[0].strip()
+
+        registrar_evento(
+            db=db,
+            id_usuario=user.id_usuario,
+            id_clinica=user.id_clinica,
+            tabla_afectada="usuarios",
+            registro_id=user.id_usuario,
+            accion="LOGIN",
+            descripcion=f"Inicio de sesión exitoso: {user.correo}",
+            direccion_ip=client_ip
+        )
+    except Exception:
+        pass
 
     return TokenResponse(
         access_token=access_token,

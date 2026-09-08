@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, sessionmaker, joinedload
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import get_db
@@ -41,47 +41,9 @@ class CU02UsersTestCase(unittest.TestCase):
 
     @classmethod
     def _create_schema(cls):
-        with cls.engine.begin() as conn:
-            conn.exec_driver_sql(
-                """
-                CREATE TABLE clinicas (
-                    id_clinica INTEGER PRIMARY KEY,
-                    nombre TEXT
-                )
-                """
-            )
-            conn.exec_driver_sql(
-                """
-                CREATE TABLE roles (
-                    id_rol INTEGER PRIMARY KEY,
-                    id_clinica INTEGER NULL,
-                    nombre TEXT NOT NULL,
-                    descripcion TEXT NULL,
-                    estado TEXT NOT NULL
-                )
-                """
-            )
-            conn.exec_driver_sql(
-                """
-                CREATE TABLE usuarios (
-                    id_usuario INTEGER PRIMARY KEY AUTOINCREMENT,
-                    id_clinica INTEGER NULL,
-                    id_rol INTEGER NULL,
-                    nombres TEXT NOT NULL,
-                    apellidos TEXT NOT NULL,
-                    correo TEXT NOT NULL UNIQUE,
-                    telefono TEXT NULL,
-                    password_hash TEXT NOT NULL,
-                    foto_perfil TEXT NULL,
-                    estado TEXT NOT NULL,
-                    notificaciones_push BOOLEAN NOT NULL DEFAULT 1,
-                    notificaciones_email BOOLEAN NOT NULL DEFAULT 1,
-                    notificaciones_sms BOOLEAN NOT NULL DEFAULT 0,
-                    fecha_creacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    fecha_actualizacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-                """
-            )
+        from app.core.database import Base
+        import app.modules.auth.models
+        Base.metadata.create_all(bind=cls.engine)
 
     def setUp(self):
         self._reset_data()
@@ -95,7 +57,7 @@ class CU02UsersTestCase(unittest.TestCase):
             conn.exec_driver_sql("DELETE FROM roles")
             conn.exec_driver_sql("DELETE FROM clinicas")
             conn.exec_driver_sql(
-                "INSERT INTO clinicas (id_clinica, nombre) VALUES (1, 'Clinica Central'), (2, 'Clinica Norte')"
+                "INSERT INTO clinicas (id_clinica, nombre, estado) VALUES (1, 'Clinica Central', 'ACTIVO'), (2, 'Clinica Norte', 'ACTIVO')"
             )
             conn.exec_driver_sql(
                 """
@@ -134,7 +96,12 @@ class CU02UsersTestCase(unittest.TestCase):
         def dependency():
             db: Session = self.SessionLocal()
             try:
-                return db.get(Usuario, user_id)
+                return (
+                    db.query(Usuario)
+                    .options(joinedload(Usuario.rol))
+                    .filter(Usuario.id_usuario == user_id)
+                    .first()
+                )
             finally:
                 db.close()
 
@@ -331,6 +298,7 @@ class CU02UsersTestCase(unittest.TestCase):
         response = self.client.get("/auth/me")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["correo"], "admin@telemedicina.com")
+        self.assertEqual(response.json()["rol"], "Administración")
 
 
 if __name__ == "__main__":

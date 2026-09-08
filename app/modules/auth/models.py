@@ -98,7 +98,7 @@ class Usuario(Base):
 
     @property
     def tenant_id(self):
-        return self.id_clinica
+        return str(self.id_clinica) if self.id_clinica is not None else None
 
     def __repr__(self) -> str:
         return f"<Usuario(id={self.id_usuario}, correo='{self.correo}', estado='{self.estado}')>"
@@ -119,7 +119,7 @@ class Auditoria(Base):
     __tablename__ = "auditoria"
 
     id_auditoria = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
-    id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=False)
+    id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=True)
     id_usuario = Column(BigInteger, ForeignKey("usuarios.id_usuario"), nullable=False)
     tabla_afectada = Column(String(150), nullable=True)
     registro_id = Column(BigInteger, nullable=True)

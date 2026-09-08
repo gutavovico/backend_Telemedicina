@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -94,7 +94,7 @@ class EspecialidadMedico(BaseModel):
 class MedicoResponse(BaseModel):
     id_medico: int
     id_usuario: int
-    tenant_id: Optional[str] = None
+    tenant_id: Optional[Union[str, int]] = None
     matricula_profesional: str
     descripcion_profesional: Optional[str] = None
     experiencia: Optional[str] = None

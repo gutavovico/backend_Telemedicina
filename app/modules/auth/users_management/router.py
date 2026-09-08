@@ -2,8 +2,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.modules.auth.dependencies import get_current_tenant_id, require_admin
-from app.modules.auth.models import Usuario
+from app.core.dependencies.tenant import get_current_tenant_optional
+from app.modules.auth.dependencies import require_admin
+from app.modules.auth.models import Clinica, Usuario
 from app.modules.auth.users_management.schemas import (
     AdminUserCreate,
     AdminUserResponse,
@@ -30,8 +31,9 @@ router = APIRouter(prefix="/users", tags=["Usuarios (CU02)"])
 def get_users(
     db: Session = Depends(get_db),
     admin_user: Usuario = Depends(require_admin),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant: Optional[Clinica] = Depends(get_current_tenant_optional),
 ):
+    tenant_id = tenant.id_clinica if tenant else None
     return list_users(db, tenant_id=tenant_id)
 
 
@@ -45,8 +47,9 @@ def get_user(
     id_usuario: int,
     db: Session = Depends(get_db),
     admin_user: Usuario = Depends(require_admin),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant: Optional[Clinica] = Depends(get_current_tenant_optional),
 ):
+    tenant_id = tenant.id_clinica if tenant else None
     return get_user_detail(db, id_usuario, tenant_id=tenant_id)
 
 
@@ -61,8 +64,9 @@ def create_user(
     user_data: AdminUserCreate,
     db: Session = Depends(get_db),
     admin_user: Usuario = Depends(require_admin),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant: Optional[Clinica] = Depends(get_current_tenant_optional),
 ):
+    tenant_id = tenant.id_clinica if tenant else None
     return create_admin_user(db, user_data, current_tenant_id=tenant_id)
 
 
@@ -77,8 +81,9 @@ def update_user(
     user_data: AdminUserUpdate,
     db: Session = Depends(get_db),
     admin_user: Usuario = Depends(require_admin),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant: Optional[Clinica] = Depends(get_current_tenant_optional),
 ):
+    tenant_id = tenant.id_clinica if tenant else None
     return update_admin_user(db, id_usuario, user_data, current_tenant_id=tenant_id)
 
 
@@ -93,6 +98,8 @@ def update_user_status(
     status_data: AdminUserStatusUpdate,
     db: Session = Depends(get_db),
     admin_user: Usuario = Depends(require_admin),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant: Optional[Clinica] = Depends(get_current_tenant_optional),
 ):
+    tenant_id = tenant.id_clinica if tenant else None
     return set_user_status(db, id_usuario, status_data.activo, current_tenant_id=tenant_id)
+

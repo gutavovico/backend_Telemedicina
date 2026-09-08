@@ -1,10 +1,11 @@
+from typing import Optional
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.security import decode_refresh_token
 from app.modules.auth.models import TokenBlacklist, Usuario
 
 
-def revoke_user_session(db: Session, refresh_token: str) -> None:
+def revoke_user_session(db: Session, refresh_token: str, client_ip: Optional[str] = None) -> None:
     payload = decode_refresh_token(refresh_token)
     user_id_str = payload.get("sub")
     try:
@@ -23,3 +24,18 @@ def revoke_user_session(db: Session, refresh_token: str) -> None:
         blacklist_entry = TokenBlacklist(token=refresh_token[:500])
         db.add(blacklist_entry)
         db.commit()
+
+        try:
+            from app.modules.auditoria.service import registrar_evento
+            registrar_evento(
+                db=db,
+                id_usuario=user.id_usuario,
+                id_clinica=user.id_clinica,
+                tabla_afectada="usuarios",
+                registro_id=user.id_usuario,
+                accion="LOGOUT",
+                descripcion=f"Cierre de sesión exitoso: {user.correo}",
+                direccion_ip=client_ip
+            )
+        except Exception:
+            pass

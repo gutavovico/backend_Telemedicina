@@ -3,8 +3,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from app.core.database import get_db
-from app.modules.auth.dependencies import get_current_tenant_id, get_current_user, require_roles
-from app.modules.auth.models import Usuario
+from app.core.dependencies.tenant import get_current_tenant
+from app.modules.auth.dependencies import get_current_user, require_roles
+from app.modules.auth.models import Clinica, Usuario
 from app.modules.medical_records.patient_profile import service
 from app.modules.medical_records.patient_profile.schemas import (
     PacienteCreateRequest,
@@ -28,10 +29,10 @@ def create_patient_endpoint(
     data: PacienteCreateRequest,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles(["ADMIN", "RECEPCION"])),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant: Clinica = Depends(get_current_tenant),
 ):
     # Verificar si el carnet de identidad ya existe en este tenant
-    existente = service.get_patient_by_ci(db, data.ci, data.complemento, tenant_id=tenant_id)
+    existente = service.get_patient_by_ci(db, data.ci, data.complemento, tenant_id=tenant.id_clinica)
     if existente:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -39,7 +40,21 @@ def create_patient_endpoint(
         )
 
     try:
-        paciente = service.create_patient(db, data, current_tenant_id=tenant_id)
+        paciente = service.create_patient(db, data, current_tenant_id=tenant.id_clinica)
+        try:
+            from app.modules.auditoria.service import registrar_evento
+            registrar_evento(
+                db=db,
+                id_usuario=current_user.id_usuario,
+                id_clinica=tenant.id_clinica,
+                tabla_afectada="pacientes",
+                registro_id=paciente.id_paciente,
+                accion="INSERT",
+                descripcion=f"Registro de nuevo paciente: {paciente.nombres} {paciente.apellidos} (CI: {paciente.ci})",
+                datos_nuevos={"nombres": paciente.nombres, "apellidos": paciente.apellidos, "ci": paciente.ci, "telefono": paciente.telefono}
+            )
+        except Exception:
+            pass
         return paciente
     except IntegrityError:
         db.rollback()
@@ -64,10 +79,10 @@ def list_patients_endpoint(
     estado: Optional[str] = Query("ACTIVO", description="Filtro por estado ('ACTIVO', 'INACTIVO', 'TODOS')"),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles(["ADMIN", "RECEPCION", "MEDICO"])),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant: Clinica = Depends(get_current_tenant),
 ):
     items, total, total_pages = service.list_patients(
-        db, page=page, page_size=page_size, q=q, ci=ci, estado=estado, tenant_id=tenant_id
+        db, page=page, page_size=page_size, q=q, ci=ci, estado=estado, tenant_id=tenant.id_clinica
     )
     return PacientePaginationResponse(
         items=items,
@@ -88,9 +103,9 @@ def list_patients_endpoint(
 def get_my_patient_profile(
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant: Clinica = Depends(get_current_tenant),
 ):
-    paciente = service.get_patient_by_user_id(db, current_user.id_usuario, tenant_id=tenant_id)
+    paciente = service.get_patient_by_user_id(db, current_user.id_usuario, tenant_id=tenant.id_clinica)
     if not paciente:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -110,9 +125,9 @@ def patch_my_patient_profile(
     data: PacienteProfilePatchRequest,
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant: Clinica = Depends(get_current_tenant),
 ):
-    paciente = service.patch_patient_profile(db, current_user.id_usuario, data, current_tenant_id=tenant_id)
+    paciente = service.patch_patient_profile(db, current_user.id_usuario, data, current_tenant_id=tenant.id_clinica)
     if not paciente:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -132,9 +147,9 @@ def get_patient_detail(
     id_paciente: int,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles(["ADMIN", "RECEPCION", "MEDICO"])),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant: Clinica = Depends(get_current_tenant),
 ):
-    paciente = service.get_patient_by_id(db, id_paciente, tenant_id=tenant_id)
+    paciente = service.get_patient_by_id(db, id_paciente, tenant_id=tenant.id_clinica)
     if not paciente:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -155,14 +170,27 @@ def update_patient_endpoint(
     data: PacienteUpdateRequest,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles(["ADMIN", "RECEPCION", "MEDICO"])),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant: Clinica = Depends(get_current_tenant),
 ):
-    paciente = service.update_patient(db, id_paciente, data, current_tenant_id=tenant_id)
+    paciente = service.update_patient(db, id_paciente, data, current_tenant_id=tenant.id_clinica)
     if not paciente:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Paciente no encontrado"
         )
+    try:
+        from app.modules.auditoria.service import registrar_evento
+        registrar_evento(
+            db=db,
+            id_usuario=current_user.id_usuario,
+            id_clinica=tenant.id_clinica,
+            tabla_afectada="pacientes",
+            registro_id=paciente.id_paciente,
+            accion="UPDATE",
+            descripcion=f"Actualización de expediente de paciente #{paciente.id_paciente}: {paciente.nombres} {paciente.apellidos}"
+        )
+    except Exception:
+        pass
     return paciente
 
 
@@ -176,16 +204,26 @@ def delete_patient_endpoint(
     id_paciente: int,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles(["ADMIN"])),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant: Clinica = Depends(get_current_tenant),
 ):
-    paciente = service.soft_delete_patient(db, id_paciente, current_tenant_id=tenant_id)
+    paciente = service.soft_delete_patient(db, id_paciente, current_tenant_id=tenant.id_clinica)
     if not paciente:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Paciente no encontrado"
         )
-    return {
-        "detail": "Paciente desactivado correctamente",
-        "id_paciente": id_paciente,
-        "estado": "INACTIVO"
-    }
+    try:
+        from app.modules.auditoria.service import registrar_evento
+        registrar_evento(
+            db=db,
+            id_usuario=current_user.id_usuario,
+            id_clinica=tenant.id_clinica,
+            tabla_afectada="pacientes",
+            registro_id=paciente.id_paciente,
+            accion="DELETE",
+            descripcion=f"Baja lógica de paciente #{paciente.id_paciente}: {paciente.nombres} {paciente.apellidos}"
+        )
+    except Exception:
+        pass
+    return {"message": "Paciente desactivado exitosamente", "id_paciente": id_paciente, "estado": paciente.estado}
+

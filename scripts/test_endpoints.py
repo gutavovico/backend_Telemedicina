@@ -47,6 +47,7 @@ def run_tests():
     me_data = res.json()
     assert me_data["correo"] == "admin@telemedicina.com"
     assert me_data["nombres"] == "Admin"
+    assert me_data.get("rol") == "Administrador"
 
     # 4. POST /auth/refresh
     print("\n4. Probando POST /auth/refresh con refresh_token...")
