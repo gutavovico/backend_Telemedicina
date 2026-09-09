@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Text, Boolean, DateTime, ForeignKey, func, UniqueConstraint
+from sqlalchemy import Column, BigInteger, Integer, String, Text, Boolean, Date, Time, Numeric, DateTime, ForeignKey, func, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -73,3 +73,45 @@ class MedicoEspecialidad(Base):
 
     medico = relationship("Medico", back_populates="especialidades")
     especialidad = relationship("Especialidad", back_populates="medicos")
+
+
+class ServicioMedico(Base):
+    __tablename__ = "servicios_medicos"
+
+    id_servicio = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    nombre = Column(String(100), nullable=False)
+    descripcion = Column(Text)
+    hora_inicio = Column(Time, nullable=False)
+    hora_fin = Column(Time, nullable=False)
+    duracion_minutos = Column(Integer, nullable=False)
+    costo = Column(Numeric(10, 2), nullable=False)
+    estado = Column(String(20), nullable=False)
+
+
+class HorarioMedico(Base):
+    __tablename__ = "horarios_medicos"
+    __table_args__ = (UniqueConstraint("id_medico", "id_servicio", "dia_semana"),)
+
+    id_horario = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    id_medico = Column(BigInteger, ForeignKey("medicos.id_medico"), nullable=False)
+    id_servicio = Column(BigInteger, ForeignKey("servicios_medicos.id_servicio"), nullable=False)
+    dia_semana = Column(Integer, nullable=False)
+    estado = Column(String(20), nullable=False, default="activo")
+    medico = relationship("Medico")
+    servicio = relationship("ServicioMedico")
+
+
+class BloqueoAgenda(Base):
+    __tablename__ = "bloqueos_agenda"
+
+    # La exclusión GiST pertenece a la BD existente; no se simula en SQLite.
+    id_bloqueo = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    id_medico = Column(BigInteger, ForeignKey("medicos.id_medico"), nullable=False)
+    id_servicio = Column(BigInteger, ForeignKey("servicios_medicos.id_servicio"), nullable=False)
+    fecha = Column(Date, nullable=False)
+    hora_inicio = Column(Time, nullable=False)
+    hora_fin = Column(Time, nullable=False)
+    motivo = Column(Text, nullable=False)
+    estado = Column(String(20), nullable=False, default="PENDIENTE")
+    medico = relationship("Medico")
+    servicio = relationship("ServicioMedico")
