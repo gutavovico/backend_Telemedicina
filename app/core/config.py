@@ -39,6 +39,19 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = "http://localhost:4200"
 
+    # Almacenamiento de documentos (CU12)
+    STORAGE_BACKEND: str = "local"  # local | minio
+    STORAGE_LOCAL_DIR: str = "storage_documents"
+    STORAGE_PUBLIC_BASE_URL: str = "http://localhost:8000"
+    # MinIO (S3-compatible)
+    MINIO_ENDPOINT: str = "localhost:9000"
+    MINIO_ACCESS_KEY: str = ""
+    MINIO_SECRET_KEY: str = ""
+    MINIO_BUCKET: str = "telemedicina-documentos"
+    MINIO_SECURE: bool = False
+    # Expiración de URL firmada en segundos (máximo 900)
+    DOCUMENTO_URL_EXPIRACION: int = 900
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

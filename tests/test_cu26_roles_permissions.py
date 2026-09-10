@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.core.database import get_db
+from app.core.database import Base, get_db
 from app.main import app
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import Usuario
@@ -39,68 +39,7 @@ class CU26RolesPermissionsTestCase(unittest.TestCase):
 
     @classmethod
     def _create_schema(cls):
-        with cls.engine.begin() as conn:
-            conn.exec_driver_sql(
-                """
-                CREATE TABLE clinicas (
-                    id_clinica INTEGER PRIMARY KEY,
-                    nombre TEXT
-                )
-                """
-            )
-            conn.exec_driver_sql(
-                """
-                CREATE TABLE roles (
-                    id_rol INTEGER PRIMARY KEY AUTOINCREMENT,
-                    id_clinica INTEGER NULL,
-                    nombre TEXT NOT NULL,
-                    descripcion TEXT NULL,
-                    estado TEXT NOT NULL
-                )
-                """
-            )
-            conn.exec_driver_sql(
-                """
-                CREATE TABLE permisos (
-                    id_permiso INTEGER PRIMARY KEY AUTOINCREMENT,
-                    nombre TEXT NOT NULL,
-                    descripcion TEXT NULL,
-                    modulo TEXT NOT NULL,
-                    accion TEXT NOT NULL,
-                    estado TEXT NOT NULL
-                )
-                """
-            )
-            conn.exec_driver_sql(
-                """
-                CREATE TABLE rol_permisos (
-                    id_rol INTEGER NOT NULL,
-                    id_permiso INTEGER NOT NULL,
-                    PRIMARY KEY (id_rol, id_permiso)
-                )
-                """
-            )
-            conn.exec_driver_sql(
-                """
-                CREATE TABLE usuarios (
-                    id_usuario INTEGER PRIMARY KEY AUTOINCREMENT,
-                    id_clinica INTEGER NULL,
-                    id_rol INTEGER NULL,
-                    nombres TEXT NOT NULL,
-                    apellidos TEXT NOT NULL,
-                    correo TEXT NOT NULL UNIQUE,
-                    telefono TEXT NULL,
-                    password_hash TEXT NOT NULL,
-                    foto_perfil TEXT NULL,
-                    estado TEXT NOT NULL,
-                    notificaciones_push BOOLEAN NOT NULL DEFAULT 1,
-                    notificaciones_email BOOLEAN NOT NULL DEFAULT 1,
-                    notificaciones_sms BOOLEAN NOT NULL DEFAULT 0,
-                    fecha_creacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    fecha_actualizacion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-                """
-            )
+        Base.metadata.create_all(cls.engine)
 
     def setUp(self):
         self._reset_data()
@@ -116,7 +55,7 @@ class CU26RolesPermissionsTestCase(unittest.TestCase):
             conn.exec_driver_sql("DELETE FROM roles")
             conn.exec_driver_sql("DELETE FROM clinicas")
             conn.exec_driver_sql(
-                "INSERT INTO clinicas (id_clinica, nombre) VALUES (1, 'Clinica Central'), (2, 'Clinica Norte')"
+                "INSERT INTO clinicas (id_clinica, nombre, estado) VALUES (1, 'Clinica Central', 'ACTIVO'), (2, 'Clinica Norte', 'ACTIVO')"
             )
             conn.exec_driver_sql(
                 """

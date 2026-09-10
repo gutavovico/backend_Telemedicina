@@ -62,3 +62,10 @@ class Paciente(Base):
 
     def __repr__(self) -> str:
         return f"<Paciente(id={self.id_paciente}, ci='{self.ci}', nombres='{self.nombres} {self.apellidos}')>"
+
+
+# Re-export de modelos de HCE, Fichas y Documentos Clínicos para acceso canónico desde medical_records.models
+from app.modules.medical_records.hce.models import HistoriaClinica, Consulta, Diagnostico  # noqa: E402, F401
+from app.modules.medical_records.fichas.models import FichaClinica  # noqa: E402, F401
+from app.modules.medical_records.clinical_documents.models import DocumentoClinico  # noqa: E402, F401
+

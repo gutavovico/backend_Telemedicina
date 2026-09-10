@@ -11,9 +11,10 @@ sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), ".."
 from app.core.config import settings
 from app.core.database import Base
 # Importar modelos para que Alembic los detecte
-from app.modules.auth.models import Usuario, Clinica, Rol, Permiso, RolPermiso, TokenBlacklist  # noqa: F401
-from app.modules.appointments.models import Especialidad, Medico, MedicoEspecialidad  # noqa: F401
-from app.modules.medical_records.models import Paciente  # noqa: F401
+from app.modules.auth.models import Usuario, Clinica, Rol, Permiso, RolPermiso, TokenBlacklist, Auditoria  # noqa: F401
+from app.modules.appointments.models import Especialidad, Medico, MedicoEspecialidad, Cita, ServicioMedico, HorarioMedico, BloqueoAgenda  # noqa: F401
+from app.modules.medical_records.models import Paciente, FichaClinica  # noqa: F401
+from app.modules.medical_records.hce.models import HistoriaClinica, Consulta, Diagnostico  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
