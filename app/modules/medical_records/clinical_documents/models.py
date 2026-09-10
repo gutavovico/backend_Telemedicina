@@ -50,7 +50,7 @@ class DocumentoClinico(Base):
 
     @property
     def tenant_id(self):
-        return self.id_clinica
+        return str(self.id_clinica) if self.id_clinica is not None else None
 
     def __repr__(self) -> str:
         return f"<DocumentoClinico(id={self.id_documento}, tipo='{self.tipo_documento}', estado='{self.estado}')>"
