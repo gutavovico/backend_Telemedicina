@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     SMTP_FROM: str = "no-reply@telemedicina.com"
 
     # CORS
-    CORS_ORIGINS: str = "http://localhost:4200"
+    CORS_ORIGINS: str = "http://localhost:4200,https://frontend-telemedicina-weld.vercel.app"
 
     # Almacenamiento de documentos (CU12)
     STORAGE_BACKEND: str = "local"  # local | minio
