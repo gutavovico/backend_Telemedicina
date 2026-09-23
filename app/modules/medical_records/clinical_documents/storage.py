@@ -110,5 +110,23 @@ class DocumentStorage:
             return None
         return file_path.read_bytes()
 
+    def delete(self, key: str) -> bool:
+        """Elimina un archivo (compensación ante rollback, CU16).
+
+        Devuelve True si el objeto ya no existe al finalizar.
+        """
+        try:
+            if self.backend == "minio":
+                self._minio_client.delete_object(Bucket=settings.MINIO_BUCKET, Key=key)
+                return True
+            file_path = (self.local_dir / Path(key)).resolve()
+            if not str(file_path).startswith(str(self.local_dir)):
+                return False
+            if file_path.is_file():
+                file_path.unlink()
+            return True
+        except Exception:
+            return False
+
 
 storage = DocumentStorage()

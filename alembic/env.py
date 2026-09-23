@@ -15,6 +15,11 @@ from app.modules.auth.models import Usuario, Clinica, Rol, Permiso, RolPermiso, 
 from app.modules.appointments.models import Especialidad, Medico, MedicoEspecialidad, Cita, ServicioMedico, HorarioMedico, BloqueoAgenda  # noqa: F401
 from app.modules.medical_records.models import Paciente, FichaClinica  # noqa: F401
 from app.modules.medical_records.hce.models import HistoriaClinica, Consulta, Diagnostico  # noqa: F401
+from app.modules.medical_records.clinical_documents.models import DocumentoClinico  # noqa: F401
+from app.modules.medical_records.prescriptions.models import (  # noqa: F401
+    Medicamento, Receta, RecetaDetalle, ConfiguracionRecetas,
+    SecuenciaRecetas, RecetaIdempotencia, RecetaValidacionIntento,
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
