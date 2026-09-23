@@ -1,4 +1,5 @@
-from sqlalchemy import Column, BigInteger, Integer, String, Boolean, DateTime, ForeignKey, func
+from sqlalchemy import Column, BigInteger, Integer, String, Boolean, DateTime, ForeignKey, JSON, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -94,11 +95,11 @@ class Usuario(Base):
     fecha_actualizacion = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     clinica = relationship("Clinica", back_populates="usuarios")
-    rol = relationship("Rol", back_populates="usuarios")
+    rol = relationship("Rol", back_populates="usuarios", lazy="joined")
 
     @property
     def tenant_id(self):
-        return self.id_clinica
+        return str(self.id_clinica) if self.id_clinica is not None else None
 
     def __repr__(self) -> str:
         return f"<Usuario(id={self.id_usuario}, correo='{self.correo}', estado='{self.estado}')>"
@@ -125,8 +126,8 @@ class Auditoria(Base):
     registro_id = Column(BigInteger, nullable=True)
     accion = Column(String(50), nullable=False)
     descripcion = Column(String, nullable=True)
-    datos_anteriores = Column(String, nullable=True)
-    datos_nuevos = Column(String, nullable=True)
+    datos_anteriores = Column(JSONB().with_variant(JSON(), "sqlite"), nullable=True)
+    datos_nuevos = Column(JSONB().with_variant(JSON(), "sqlite"), nullable=True)
     direccion_ip = Column(String(45), nullable=True)
     fecha_hora = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

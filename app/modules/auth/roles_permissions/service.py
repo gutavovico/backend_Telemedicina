@@ -192,7 +192,7 @@ def _ensure_role_name_unique(
     if id_clinica is None:
         query = query.filter(Rol.id_clinica.is_(None))
     else:
-        query = query.filter(Rol.id_clinica == id_clinica)
+        query = query.filter((Rol.id_clinica == id_clinica) | (Rol.id_clinica.is_(None)))
     if exclude_role_id is not None:
         query = query.filter(Rol.id_rol != exclude_role_id)
 
