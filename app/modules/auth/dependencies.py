@@ -80,6 +80,23 @@ def get_current_tenant_id(
     return None
 
 
+def get_required_tenant_id(
+    current_user: Usuario = Depends(get_current_user),
+) -> int:
+    """Obtiene el tenant de una sesión asociada a una clínica.
+
+    A diferencia de ``get_current_tenant_id``, un encabezado HTTP no puede
+    suplir una clínica ausente en la cuenta autenticada. Los módulos SaaS que
+    manipulan recursos privados deben usar esta dependencia.
+    """
+    if current_user.id_clinica is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="La cuenta autenticada no está asociada a una clínica",
+        )
+    return current_user.id_clinica
+
+
 def require_admin(current_user: Usuario = Depends(get_current_user)) -> Usuario:
     """Allow access only to users with the Administracion role."""
     if current_user.id_rol != ADMIN_ROLE_ID:
