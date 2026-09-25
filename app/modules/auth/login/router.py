@@ -137,5 +137,35 @@ def refresh_token(request_data: RefreshTokenRequest, db: Session = Depends(get_d
     summary="Obtener perfil del usuario autenticado",
 )
 def get_me(current_user: Usuario = Depends(get_current_user)):
-    """Devuelve los datos del usuario actual."""
-    return current_user
+    """Devuelve los datos del usuario actual.
+
+    Contrato oficial CU16: `rol` es el nombre real de la relación
+    `Usuario.rol` (p. ej. ADMIN, MEDICO, PACIENTE). `id_rol` se mantiene
+    solo por compatibilidad y nunca debe usarse para inferir permisos.
+    """
+    rol_nombre = None
+    rol_obj = getattr(current_user, "rol", None)
+    if rol_obj is not None:
+        nombre = getattr(rol_obj, "nombre", None)
+        if isinstance(nombre, str):
+            rol_nombre = nombre
+    tenant = getattr(current_user, "tenant_id", None)
+    if tenant is None and getattr(current_user, "id_clinica", None) is not None:
+        tenant = str(current_user.id_clinica)
+    return UsuarioResponse(
+        id_usuario=current_user.id_usuario,
+        id_clinica=current_user.id_clinica,
+        tenant_id=tenant,
+        id_rol=current_user.id_rol,
+        rol=rol_nombre,
+        nombres=current_user.nombres,
+        apellidos=current_user.apellidos,
+        correo=current_user.correo,
+        telefono=current_user.telefono,
+        foto_perfil=current_user.foto_perfil,
+        estado=current_user.estado,
+        notificaciones_push=current_user.notificaciones_push,
+        notificaciones_email=current_user.notificaciones_email,
+        notificaciones_sms=current_user.notificaciones_sms,
+        fecha_creacion=current_user.fecha_creacion,
+    )

@@ -55,7 +55,17 @@ class Medico(Base):
         nullable=False,
         unique=True,
     )
-    matricula_profesional = Column(String(30), nullable=False, unique=True, index=True)
+    # Se persiste explícitamente para que el perfil médico no dependa solo
+    # del join con usuarios al aplicar aislamiento multitenant (CU04).
+    # Es nullable durante la migración de perfiles heredados; CU04 no crea ni
+    # devuelve perfiles sin clínica asociada.
+    id_clinica = Column(
+        BigInteger,
+        ForeignKey("clinicas.id_clinica", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    matricula_profesional = Column(String(30), nullable=False, index=True)
     descripcion_profesional = Column(Text, nullable=True)
     experiencia = Column(Text, nullable=True)
     foto_perfil = Column(String(500), nullable=True)
@@ -71,7 +81,7 @@ class Medico(Base):
 
     @property
     def tenant_id(self):
-        return str(self.usuario.id_clinica) if (self.usuario and self.usuario.id_clinica is not None) else None
+        return str(self.id_clinica) if self.id_clinica is not None else None
 
     def __repr__(self) -> str:
         return f"<Medico(id={self.id_medico}, id_usuario={self.id_usuario}, matricula='{self.matricula_profesional}', estado='{self.estado}')>"

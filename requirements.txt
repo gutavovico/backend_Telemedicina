@@ -25,9 +25,17 @@ email-validator>=2.0.0
 
 # Seguridad, JWT & Hashing
 python-jose[cryptography]>=3.3.0
+cryptography>=41.0.0
 passlib[bcrypt]>=1.7.4
 bcrypt>=4.0.0,<5.0.0
 python-multipart>=0.0.9
+
+# CU16 Recetas digitales: firma Ed25519 (cryptography);
+# canonicalización RFC 8785/JCS mediante biblioteca mantenida `jcs`,
+# PDF y QR implementados con la biblioteca estándar para operar sin
+# dependencias pesadas de PDF/QR.
+# Opcionales (no requeridos): reportlab>=4.0, qrcode>=7.4, pynacl>=1.5
+jcs==0.2.1
 
 # Testing
 httpx>=0.27.0

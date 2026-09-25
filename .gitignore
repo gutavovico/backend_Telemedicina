@@ -37,6 +37,7 @@ my_specs/
 logs/
 tmp/
 temp/
+storage_documents/
 
 # Archivos del Sistema Operativo
 .DS_Store
