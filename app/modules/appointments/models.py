@@ -71,7 +71,7 @@ class Medico(Base):
 
     @property
     def tenant_id(self):
-        return self.usuario.id_clinica if self.usuario else None
+        return str(self.usuario.id_clinica) if (self.usuario and self.usuario.id_clinica is not None) else None
 
     def __repr__(self) -> str:
         return f"<Medico(id={self.id_medico}, id_usuario={self.id_usuario}, matricula='{self.matricula_profesional}', estado='{self.estado}')>"
@@ -215,4 +215,3 @@ class BloqueoAgenda(Base):
 
     def __repr__(self) -> str:
         return f"<BloqueoAgenda(id={self.id_bloqueo}, medico={self.id_medico}, fecha={self.fecha}, estado='{self.estado}')>"
-

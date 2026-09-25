@@ -18,5 +18,3 @@ router.include_router(fichas_router, prefix="/fichas")
 # CU12: Documentos Clínicos y Exámenes
 router.include_router(clinical_documents_router)
 router.include_router(pacientes_doc_router)
-
-
