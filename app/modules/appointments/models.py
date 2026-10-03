@@ -118,6 +118,12 @@ class Cita(Base):
         autoincrement=True,
         index=True,
     )
+    id_clinica = Column(
+        BigInteger,
+        ForeignKey("clinicas.id_clinica", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     id_paciente = Column(
         BigInteger,
         ForeignKey("pacientes.id_paciente", ondelete="RESTRICT"),

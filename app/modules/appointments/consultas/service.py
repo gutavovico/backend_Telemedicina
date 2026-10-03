@@ -40,7 +40,13 @@ def formatear_cita_response(cita: Cita) -> CitaResponse:
     medico_nombre = ""
     if getattr(cita, "medico", None):
         if getattr(cita.medico, "usuario", None):
-            medico_nombre = f"Dr(a). {cita.medico.usuario.nombres} {cita.medico.usuario.apellidos}".strip()
+            u_nombres = (cita.medico.usuario.nombres or "").strip()
+            u_apellidos = (cita.medico.usuario.apellidos or "").strip()
+            nombre_completo = f"{u_nombres} {u_apellidos}".strip()
+            if nombre_completo.lower().startswith("dr.") or nombre_completo.lower().startswith("dra.") or nombre_completo.lower().startswith("dr(a)."):
+                medico_nombre = nombre_completo
+            else:
+                medico_nombre = f"Dr. {nombre_completo}".strip()
         else:
             medico_nombre = f"Médico Matrícula: {getattr(cita.medico, 'matricula_profesional', cita.id_medico)}"
 

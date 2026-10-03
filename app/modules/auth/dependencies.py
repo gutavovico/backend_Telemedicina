@@ -81,20 +81,27 @@ def get_current_tenant_id(
 
 
 def get_required_tenant_id(
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
     current_user: Usuario = Depends(get_current_user),
 ) -> int:
     """Obtiene el tenant de una sesión asociada a una clínica.
 
-    A diferencia de ``get_current_tenant_id``, un encabezado HTTP no puede
-    suplir una clínica ausente en la cuenta autenticada. Los módulos SaaS que
-    manipulan recursos privados deben usar esta dependencia.
+    Prioriza id_clinica del usuario autenticado; como alternativa admite
+    el header X-Tenant-ID o asocia a pacientes (rol 4) a la clínica principal (1).
     """
-    if current_user.id_clinica is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="La cuenta autenticada no está asociada a una clínica",
-        )
-    return current_user.id_clinica
+    if current_user.id_clinica is not None:
+        return current_user.id_clinica
+    if x_tenant_id:
+        try:
+            return int(x_tenant_id)
+        except ValueError:
+            pass
+    if current_user.id_rol == 4:
+        return 1
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="La cuenta autenticada no está asociada a una clínica",
+    )
 
 
 def require_admin(current_user: Usuario = Depends(get_current_user)) -> Usuario:

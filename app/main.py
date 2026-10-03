@@ -5,6 +5,7 @@ from app.core.config import settings
 from app.modules.auth.router import router as auth_router
 from app.modules.medical_records.router import router as medical_records_router
 from app.modules.appointments.router import router as appointments_router
+from app.modules.communications.router import router as communications_router
 from app.modules.medical_records.prescriptions.router import prescription_error_handler
 from app.modules.medical_records.prescriptions.service import PrescriptionError
 
@@ -54,7 +55,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origin_regex=r"https://.*\.vercel\.app|http://localhost(:\d+)?|http://127\.0\.0\.1(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -64,6 +65,8 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(medical_records_router)
 app.include_router(appointments_router)
+app.include_router(communications_router)
+app.include_router(communications_router, prefix="/api/v1")
 
 # CU16: formato de error uniforme {"detail", "code"} (contrato §7)
 app.add_exception_handler(PrescriptionError, prescription_error_handler)

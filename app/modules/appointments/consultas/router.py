@@ -62,6 +62,14 @@ def listar_citas(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
+    if current_user.id_rol == 4:
+        from app.modules.medical_records.models import Paciente
+        paciente_record = db.query(Paciente).filter(Paciente.id_usuario == current_user.id_usuario).first()
+        if paciente_record:
+            id_paciente = paciente_record.id_paciente
+        else:
+            return CitaListResponse(total=0, page=page, page_size=page_size, items=[])
+
     return service.listar_citas(
         db=db,
         q=q,
