@@ -1,15 +1,18 @@
 import os
 import sys
 import uuid
+import hashlib
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 # Agregar directorio raíz al PYTHONPATH
 sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), "..")))
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal, engine
 from app.core.security import hash_password
-from app.modules.auth.models import Clinica, Rol, Usuario, Auditoria
+from app.modules.auth.models import Clinica, Rol, Usuario, Auditoria, Permiso, RolPermiso
 from app.modules.medical_records.models import Paciente
 from app.modules.appointments.models import (
     Especialidad,
@@ -23,6 +26,46 @@ from app.modules.appointments.models import (
 from app.modules.medical_records.fichas.models import FichaClinica
 from app.modules.medical_records.hce.models import HistoriaClinica, Consulta, Diagnostico
 from app.modules.medical_records.clinical_documents.models import DocumentoClinico
+from app.modules.communications.models import MensajeChatCita
+
+
+def _pdf_placeholder_bytes(titulo: str, lineas: list | None = None) -> bytes:
+    """PDF demo con cabecera + datos del documento (no es un clínico real).
+
+    NOTA: documento ilustrativo para demo/seed. El documento formal se genera
+    desde la API autenticada cuando el médico lo emite.
+    """
+    def _esc(texto: str) -> str:
+        return texto.replace("\\", "").replace("(", "[").replace(")", "]")
+
+    y = 720
+    ops = [f"BT /F1 18 Tf 72 {y} Td ({_esc(titulo)}) Tj ET"]
+    y -= 30
+    for linea in (lineas or []):
+        ops.append(f"BT /F1 11 Tf 72 {y} Td ({_esc(linea)}) Tj ET")
+        y -= 18
+    stream = "\n".join(ops).encode("latin-1", "replace")
+    return (
+        b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+        b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+        b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R"
+        b"/Resources<</Font<</F1 5 0 R>>>>>>endobj\n"
+        b"4 0 obj<</Length " + str(len(stream)).encode() + b">>stream\n" + stream +
+        b"\nendstream\nendobj\n"
+        b"5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n"
+        b"trailer<</Root 1 0 R>>\n%%EOF"
+    )
+
+
+def _ensure_seed_pdf(slug: str, titulo: str, lineas: list | None = None) -> tuple:
+    """Crea (si falta) el PDF demo en storage_documents/seed y devuelve (key, sha256)."""
+    base = Path(__file__).resolve().parent.parent / "storage_documents" / "seed"
+    base.mkdir(parents=True, exist_ok=True)
+    path = base / f"{slug}.pdf"
+    if not path.is_file():
+        path.write_bytes(_pdf_placeholder_bytes(titulo, lineas))
+    contenido = path.read_bytes()
+    return f"seed/{slug}.pdf", hashlib.sha256(contenido).hexdigest()
 
 
 def seed_all():
@@ -91,6 +134,96 @@ def seed_all():
                 rol.estado = "ACTIVO"
 
         db.flush()
+
+        # Rol global Super Administrador (SaaS, id_clinica=None). Upsert por
+        # (lower(nombre), id_clinica IS NULL) para no colisionar con la
+        # migración 010 ni con roles de tenant. No se toca en el loop de ids.
+        rol_super = db.query(Rol).filter(
+            func.lower(Rol.nombre) == func.lower("Super Administrador"),
+            Rol.id_clinica.is_(None),
+        ).first()
+        if not rol_super:
+            rol_super = Rol(
+                id_clinica=None,
+                nombre="Super Administrador",
+                descripcion="Acceso total y administración de la plataforma SaaS",
+                estado="ACTIVO",
+            )
+            db.add(rol_super)
+            print("  [+] Creado Rol Super Administrador (global)")
+        else:
+            rol_super.descripcion = "Acceso total y administración de la plataforma SaaS"
+            rol_super.estado = "ACTIVO"
+            print("  [=] Rol Super Administrador verificado")
+        db.flush()
+
+        # -------------------------------------------------------------
+        # 2b. Permisos y asignación Rol -> Permisos (CU26)
+        # -------------------------------------------------------------
+        print("\n[2b/10] Verificando Permisos del Sistema...")
+        seed_permisos = [
+            ("users", "read", "VER_USUARIOS", "Ver usuarios"),
+            ("users", "write", "EDITAR_USUARIOS", "Crear y editar usuarios"),
+            ("roles", "read", "VER_ROLES", "Ver roles y sus permisos"),
+            ("roles", "write", "EDITAR_ROLES", "Crear roles y asignar permisos"),
+            ("appointments", "read", "VER_CITAS", "Ver citas"),
+            ("appointments", "write", "EDITAR_CITAS", "Crear, reprogramar y cancelar citas"),
+            ("medical_records", "read", "VER_HISTORIAS", "Ver historias clínicas"),
+            ("medical_records", "write", "EDITAR_HISTORIAS", "Crear y editar historias clínicas"),
+            ("patients", "read", "VER_PACIENTES", "Ver pacientes"),
+            ("patients", "write", "EDITAR_PACIENTES", "Crear y editar pacientes"),
+            ("specialties", "read", "VER_ESPECIALIDADES", "Ver especialidades médicas"),
+            ("analytics", "read", "VER_REPORTES", "Ver reportes y analítica"),
+        ]
+        permiso_map = {}
+        for modulo, accion, nombre, desc in seed_permisos:
+            perm = db.query(Permiso).filter(
+                Permiso.modulo == modulo, Permiso.accion == accion
+            ).first()
+            if not perm:
+                perm = Permiso(
+                    nombre=nombre, descripcion=desc,
+                    modulo=modulo, accion=accion, estado="ACTIVO",
+                )
+                db.add(perm)
+                db.flush()
+            permiso_map[f"{modulo}.{accion}"] = perm
+
+        # Todos los códigos para roles administradores (global y de tenant).
+        todos = list(permiso_map.keys())
+        seed_rol_permisos = {
+            "Super Administrador": todos,
+            "ADMIN": todos,
+            "MEDICO": [
+                "appointments.read", "appointments.write",
+                "medical_records.read", "medical_records.write",
+                "patients.read", "specialties.read",
+            ],
+            "RECEPCION": [
+                "appointments.read", "appointments.write",
+                "patients.read", "patients.write", "users.read",
+            ],
+            "PACIENTE": ["appointments.read", "medical_records.read"],
+        }
+        for rol_nombre, codigos in seed_rol_permisos.items():
+            rol = db.query(Rol).filter(Rol.nombre == rol_nombre).first()
+            # Super Administrador es global; el resto son los canónicos (id 1-4).
+            if rol_nombre == "Super Administrador":
+                rol = rol_super
+            if not rol:
+                continue
+            for codigo in codigos:
+                perm = permiso_map.get(codigo)
+                if not perm:
+                    continue
+                ya = db.query(RolPermiso).filter(
+                    RolPermiso.id_rol == rol.id_rol,
+                    RolPermiso.id_permiso == perm.id_permiso,
+                ).first()
+                if not ya:
+                    db.add(RolPermiso(id_rol=rol.id_rol, id_permiso=perm.id_permiso))
+        db.flush()
+        print("  [=] Permisos y asignaciones verificados")
 
         # -------------------------------------------------------------
         # 3. Usuarios de Prueba
@@ -170,10 +303,29 @@ def seed_all():
                 "id_clinica": 2,
                 "telefono": "+591 76555666",
             },
+            # Super Administrador global SaaS (sin clínica)
+            {
+                "correo": "superadmin@telemedicina.com",
+                "password": "superadmin123",
+                "nombres": "Super",
+                "apellidos": "Admin SaaS",
+                "id_rol": None,
+                "rol_nombre": "Super Administrador",
+                "id_clinica": None,
+                "telefono": "+591 70000000",
+            },
         ]
 
         user_map = {}
         for u_data in usuarios_seed:
+            # Resolver rol por nombre (caso Super Administrador global).
+            id_rol = u_data["id_rol"]
+            if id_rol is None and u_data.get("rol_nombre"):
+                rol_obj = db.query(Rol).filter(
+                    func.lower(Rol.nombre) == func.lower(u_data["rol_nombre"]),
+                    Rol.id_clinica.is_(None),
+                ).first()
+                id_rol = rol_obj.id_rol if rol_obj else None
             user = db.query(Usuario).filter(Usuario.correo == u_data["correo"]).first()
             if not user:
                 user = Usuario(
@@ -181,18 +333,18 @@ def seed_all():
                     password_hash=hash_password(u_data["password"]),
                     nombres=u_data["nombres"],
                     apellidos=u_data["apellidos"],
-                    id_rol=u_data["id_rol"],
+                    id_rol=id_rol,
                     id_clinica=u_data["id_clinica"],
                     telefono=u_data["telefono"],
                     estado="activo",
                 )
                 db.add(user)
-                print(f"  [+] Creado Usuario: {u_data['correo']} (Rol: {u_data['id_rol']})")
+                print(f"  [+] Creado Usuario: {u_data['correo']} (Rol: {id_rol})")
             else:
                 user.password_hash = hash_password(u_data["password"])
                 user.nombres = u_data["nombres"]
                 user.apellidos = u_data["apellidos"]
-                user.id_rol = u_data["id_rol"]
+                user.id_rol = id_rol
                 user.id_clinica = u_data["id_clinica"]
                 user.telefono = u_data["telefono"]
                 user.estado = "activo"
@@ -297,6 +449,42 @@ def seed_all():
                 "tipo_sangre": "A-",
                 "id_clinica": 1,
             },
+            # --- Tenant 2: Red Médica del Norte (demo de aislamiento) ---
+            {
+                "id_usuario": user_map["paciente.luis@telemedicina.com"].id_usuario,
+                "nombres": "Luis",
+                "apellidos": "Gómez Ardaya",
+                "ci": "6666666",
+                "complemento": "",
+                "fecha_nacimiento": date(1990, 12, 3),
+                "genero": "M",
+                "telefono": "+591 76555666",
+                "correo": "paciente.luis@telemedicina.com",
+                "direccion": "Av. Banzer Km 6 #210",
+                "ciudad": "Santa Cruz de la Sierra",
+                "tipo_sangre": "O+",
+                "alergias": "Ninguna conocida",
+                "antecedentes_patologicos": "Rinitis alérgica estacional",
+                "contacto_emergencia_nombre": "Carmen Ardaya",
+                "contacto_emergencia_telefono": "+591 76666777",
+                "contacto_emergencia_parentesco": "Madre",
+                "id_clinica": 2,
+            },
+            {
+                "id_usuario": None,
+                "nombres": "Paola",
+                "apellidos": "Justiniano Ribera",
+                "ci": "7777777",
+                "complemento": "",
+                "fecha_nacimiento": date(2015, 4, 18),
+                "genero": "F",
+                "telefono": "+591 77666777",
+                "correo": "paola.justiniano@gmail.com",
+                "direccion": "Calle Warnes #88",
+                "ciudad": "Santa Cruz de la Sierra",
+                "tipo_sangre": "A+",
+                "id_clinica": 2,
+            },
         ]
 
         paciente_map = {}
@@ -351,6 +539,7 @@ def seed_all():
         if not medico_roberto:
             medico_roberto = Medico(
                 id_usuario=doc_user.id_usuario,
+                id_clinica=1,
                 matricula_profesional="MAT-10492",
                 descripcion_profesional="Médico internista y cardiólogo preventivo con 12 años de trayectoria.",
                 experiencia="Hospital San Juan de Dios (2014-actualidad), Clínica Central.",
@@ -359,6 +548,7 @@ def seed_all():
             db.add(medico_roberto)
             print("  [+] Creado perfil médico Dr. Roberto Gómez")
         else:
+            medico_roberto.id_clinica = 1
             medico_roberto.matricula_profesional = "MAT-10492"
             medico_roberto.descripcion_profesional = "Médico internista y cardiólogo preventivo con 12 años de trayectoria."
             medico_roberto.estado = "activo"
@@ -387,6 +577,7 @@ def seed_all():
         if not medico_elena:
             medico_elena = Medico(
                 id_usuario=elena_user.id_usuario,
+                id_clinica=2,
                 matricula_profesional="MAT-20381",
                 descripcion_profesional="Pediatra con especialidad en neonatología y desarrollo infantil.",
                 experiencia="Hospital de Niños y Red Norte.",
@@ -395,6 +586,7 @@ def seed_all():
             db.add(medico_elena)
             print("  [+] Creado perfil médico Dra. Elena Ríos")
         else:
+            medico_elena.id_clinica = 2
             medico_elena.matricula_profesional = "MAT-20381"
             medico_elena.estado = "activo"
         db.flush()
@@ -512,6 +704,7 @@ def seed_all():
                 "id_medico": medico_roberto.id_medico,
                 "id_especialidad": esp_map["Cardiología"].id_especialidad,
                 "id_servicio": 2,
+                "id_clinica": 1,
                 "fecha_cita": date.today() + timedelta(days=2),
                 "hora_inicio": "15:00",
                 "hora_fin": "15:45",
@@ -526,6 +719,7 @@ def seed_all():
                 "id_medico": medico_roberto.id_medico,
                 "id_especialidad": esp_map["Medicina General"].id_especialidad,
                 "id_servicio": 1,
+                "id_clinica": 1,
                 "fecha_cita": date.today() - timedelta(days=10),
                 "hora_inicio": "09:00",
                 "hora_fin": "09:30",
@@ -540,6 +734,7 @@ def seed_all():
                 "id_medico": medico_roberto.id_medico,
                 "id_especialidad": esp_map["Medicina General"].id_especialidad,
                 "id_servicio": 1,
+                "id_clinica": 1,
                 "fecha_cita": date.today() + timedelta(days=1),
                 "hora_inicio": "08:30",
                 "hora_fin": "09:00",
@@ -553,6 +748,7 @@ def seed_all():
                 "id_medico": medico_roberto.id_medico,
                 "id_especialidad": esp_map["Medicina General"].id_especialidad,
                 "id_servicio": 1,
+                "id_clinica": 1,
                 "fecha_cita": date.today() + timedelta(days=3),
                 "hora_inicio": "10:00",
                 "hora_fin": "10:30",
@@ -560,7 +756,37 @@ def seed_all():
                 "motivo": "Molestias lumbares agudas tras levantamiento de peso",
                 "estado": "PENDIENTE",
                 "tipo_consulta": "GENERAL",
-            }
+            },
+            # --- Tenant 2: Dra. Elena + pacientes del Norte ---
+            {
+                "id_paciente": paciente_map["6666666"].id_paciente,
+                "id_medico": medico_elena.id_medico,
+                "id_especialidad": esp_map["Pediatría"].id_especialidad,
+                "id_servicio": 2,
+                "id_clinica": 2,
+                "fecha_cita": date.today() + timedelta(days=2),
+                "hora_inicio": "14:00",
+                "hora_fin": "14:45",
+                "modalidad": "TELEMEDICINA",
+                "motivo": "Control de rinitis alérgica y revisión de tratamiento",
+                "estado": "CONFIRMADA",
+                "tipo_consulta": "TELEMEDICINA",
+                "notas": "Enviar enlace de sala virtual con 15 minutos de anticipación",
+            },
+            {
+                "id_paciente": paciente_map["7777777"].id_paciente,
+                "id_medico": medico_elena.id_medico,
+                "id_especialidad": esp_map["Pediatría"].id_especialidad,
+                "id_servicio": 1,
+                "id_clinica": 2,
+                "fecha_cita": date.today() + timedelta(days=4),
+                "hora_inicio": "09:00",
+                "hora_fin": "09:30",
+                "modalidad": "PRESENCIAL",
+                "motivo": "Control de niño sano y esquema de vacunación",
+                "estado": "PENDIENTE",
+                "tipo_consulta": "GENERAL",
+            },
         ]
 
         citas_creadas = []
@@ -670,6 +896,34 @@ def seed_all():
                 "diagnostico_descripcion": "Diabetes mellitus tipo 2 sin mención de complicación",
                 "estado": "EMITIDA",
             },
+            # --- Tenant 2: ficha de teleconsulta (Dra. Elena / Luis) ---
+            {
+                "correlativo": "FICH-20260910-0003",
+                "id_clinica": 2,
+                "id_paciente": paciente_map["6666666"].id_paciente,
+                "id_medico": medico_elena.id_medico,
+                "id_servicio": 2,
+                "id_especialidad": esp_map["Pediatría"].id_especialidad,
+                "id_cita": citas_creadas[4].id_cita if len(citas_creadas) > 4 else None,
+                "fecha_atencion": date.today() + timedelta(days=2),
+                "hora_inicio": "14:00",
+                "hora_fin": "14:45",
+                "motivo_consulta": "Teleconsulta de seguimiento por rinitis alérgica estacional",
+                "signos_vitales": {
+                    "presion_arterial": "118/76",
+                    "frecuencia_cardiaca": 68,
+                    "frecuencia_respiratoria": 15,
+                    "temperatura": 36.4,
+                    "saturacion_oxigeno": 99,
+                },
+                "secciones_dinamicas": {
+                    "modalidad": "Virtual Telemedicina",
+                    "sala_videollamada": "https://meet.telemedicina.com/room-6666666",
+                },
+                "codigo_cie10": "J30.2",
+                "diagnostico_descripcion": "Rinitis alérgica estacional",
+                "estado": "EMITIDA",
+            },
         ]
 
         for f_data in fichas_seed:
@@ -715,7 +969,36 @@ def seed_all():
             print("  [+] Creada Historia Clínica Electrónica para Mateo Valdez (HCE-2026-0001)")
             db.flush()
 
-        # Documentos Clínicos (CU12) para Mateo Valdez
+        # Documentos Clínicos (CU12) para Mateo Valdez.
+        # archivo_url es CLAVE de storage (storage_documents/<key>), no ruta web.
+        _pdf_receta = _ensure_seed_pdf(
+            "receta-losartan-8472910", "Receta Medica - Losartan Potasico 50mg", [
+                "Paciente: Mateo Valdez Quiroga (CI 8472910)",
+                "Medico: Dr. Roberto Gomez Flores - Mat. MAT-10492",
+                "Indicacion: 1 tableta cada 24 horas por la manana, 30 dias",
+                "Presentacion: Comprimidos 50mg - Cantidad: 30",
+            ])
+        _pdf_cert = _ensure_seed_pdf(
+            "certificado-aptitud-8472910", "Certificado Medico de Aptitud Fisica", [
+                "Paciente: Mateo Valdez Quiroga (CI 8472910)",
+                "Medico: Dr. Roberto Gomez Flores - Mat. MAT-10492",
+                "Vigencia: 6 meses - Deportes recreativos y gimnasio",
+                "Observacion: Apto sin restricciones cardiorrespiratorias",
+            ])
+        _pdf_lab1 = _ensure_seed_pdf(
+            "orden-laboratorio-8472910", "Orden de Laboratorio - Perfil Lipidico", [
+                "Paciente: Mateo Valdez Quiroga (CI 8472910)",
+                "Medico: Dr. Roberto Gomez Flores - Mat. MAT-10492",
+                "Examenes: Colesterol Total, HDL, LDL, Trigliceridos, Glucemia, Hemograma",
+                "Laboratorio: Laboratorio Clinico Central - Ayuno: 12 horas",
+            ])
+        _pdf_lab2 = _ensure_seed_pdf(
+            "orden-laboratorio-6666666", "Orden de Laboratorio - Hemograma", [
+                "Paciente: Luis Gomez Ardaya (CI 6666666)",
+                "Medico: Dra. Elena Rios Vargas - Mat. MAT-20381",
+                "Examenes: Hemograma completo e IgE total",
+                "Laboratorio: Laboratorio Red Norte - Ayuno: 8 horas",
+            ])
         docs_seed = [
             {
                 "id_clinica": 1,
@@ -723,8 +1006,8 @@ def seed_all():
                 "tipo_documento": "RECETA",
                 "titulo": "Receta Médica - Losartán Potásico 50mg",
                 "descripcion": "Tratamiento antihipertensivo oral. Tomar 1 tableta cada mañana con agua.",
-                "archivo_url": "/api/v1/documentos/download/receta-losartan-8472910.pdf",
-                "hash_archivo": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "archivo_url": _pdf_receta[0],
+                "hash_archivo": _pdf_receta[1],
                 "firmado_por": medico_roberto.id_usuario,
                 "fecha_documento": date.today() - timedelta(days=10),
                 "metadatos": {
@@ -741,8 +1024,8 @@ def seed_all():
                 "tipo_documento": "CERTIFICADO",
                 "titulo": "Certificado Médico de Aptitud Física Cardiovascular",
                 "descripcion": "Certifica aptitud médica para realización de actividades deportivas recreativas.",
-                "archivo_url": "/api/v1/documentos/download/certificado-aptitud-8472910.pdf",
-                "hash_archivo": "d41d8cd98f00b204e9800998ecf8427e00000000000000000000000000000000",
+                "archivo_url": _pdf_cert[0],
+                "hash_archivo": _pdf_cert[1],
                 "firmado_por": medico_roberto.id_usuario,
                 "fecha_documento": date.today() - timedelta(days=5),
                 "metadatos": {
@@ -758,13 +1041,30 @@ def seed_all():
                 "tipo_documento": "ORDEN_LAB",
                 "titulo": "Orden de Laboratorio - Perfil Lipídico y Hemograma",
                 "descripcion": "Exámenes de control: Colesterol Total, HDL, LDL, Triglicéridos, Glucemia y Hemograma.",
-                "archivo_url": "/api/v1/documentos/download/orden-laboratorio-8472910.pdf",
-                "hash_archivo": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+                "archivo_url": _pdf_lab1[0],
+                "hash_archivo": _pdf_lab1[1],
                 "firmado_por": medico_roberto.id_usuario,
                 "fecha_documento": date.today() - timedelta(days=2),
                 "metadatos": {
                     "laboratorio": "Laboratorio Clínico Central",
                     "ayuno_horas": 12,
+                },
+                "estado": "ACTIVO",
+            },
+            # --- Tenant 2: orden de laboratorio (Dra. Elena / Luis) ---
+            {
+                "id_clinica": 2,
+                "id_paciente": paciente_map["6666666"].id_paciente,
+                "tipo_documento": "ORDEN_LAB",
+                "titulo": "Orden de Laboratorio - Hemograma y Pruebas de Alergia",
+                "descripcion": "Exámenes de control: Hemograma completo e IgE total.",
+                "archivo_url": _pdf_lab2[0],
+                "hash_archivo": _pdf_lab2[1],
+                "firmado_por": medico_elena.id_usuario,
+                "fecha_documento": date.today() - timedelta(days=1),
+                "metadatos": {
+                    "laboratorio": "Laboratorio Red Norte",
+                    "ayuno_horas": 8,
                 },
                 "estado": "ACTIVO",
             },
@@ -783,13 +1083,146 @@ def seed_all():
             else:
                 for k, v in doc_data.items():
                     setattr(doc_exist, k, v)
+        db.flush()
+
+        # Chat de teleconsulta (CU15): mensajes en la cita virtual de Mateo.
+        print("\n[10b/10] Generando mensajes de chat de teleconsulta (CU15)...")
+        cita_virtual = citas_creadas[0] if len(citas_creadas) > 0 else None
+        if cita_virtual is not None and cita_virtual.id_cita is not None:
+            chat_seed = [
+                (
+                    user_map["paciente@telemedicina.com"].id_usuario,
+                    "PACIENTE",
+                    "Buenos días doctor, desde ayer siento palpitaciones al subir las gradas.",
+                ),
+                (
+                    doc_user.id_usuario,
+                    "MEDICO",
+                    "Buenos días Mateo, ¿las palpitaciones vienen con mareo o dolor en el pecho?",
+                ),
+                (
+                    user_map["paciente@telemedicina.com"].id_usuario,
+                    "PACIENTE",
+                    "Solo fatiga leve, sin dolor. Tomé la presión y estaba en 128/82.",
+                ),
+            ]
+            for id_rem, rol_rem, texto in chat_seed:
+                ya = db.query(MensajeChatCita).filter(
+                    MensajeChatCita.id_cita == cita_virtual.id_cita,
+                    MensajeChatCita.id_remitente == id_rem,
+                    MensajeChatCita.contenido == texto,
+                ).first()
+                if not ya:
+                    db.add(MensajeChatCita(
+                        id_clinica=1,
+                        id_cita=cita_virtual.id_cita,
+                        id_remitente=id_rem,
+                        rol_remitente=rol_rem,
+                        contenido=texto,
+                        leido=True,
+                    ))
+                    print(f"  [+] Mensaje de chat ({rol_rem}): {texto[:45]}...")
+        db.flush()
+
+        # Fila virtual de hoy (CU08): citas PENDIENTE/CONFIRMADA con
+        # fecha_cita = hoy para probar la cola en vivo. Idempotente por
+        # (paciente, médico, fecha, hora): si existen se resetean a su estado
+        # demo (las pausas/notificaciones se generan en vivo desde la API).
+        print("\n[10c/10] Generando fila virtual de hoy (CU08)...")
+        hoy = date.today()
+        cola_seed = [
+            {
+                "id_paciente": pac_ana.id_paciente,
+                "id_medico": medico_roberto.id_medico,
+                "id_especialidad": esp_map["Medicina General"].id_especialidad,
+                "id_servicio": 1,
+                "id_clinica": 1,
+                "fecha_cita": hoy,
+                "hora_inicio": "09:00",
+                "hora_fin": "09:30",
+                "modalidad": "PRESENCIAL",
+                "motivo": "Control de presión arterial en fila virtual demo",
+                "estado": "PENDIENTE",
+                "tipo_consulta": "GENERAL",
+            },
+            {
+                "id_paciente": pac_mateo.id_paciente,
+                "id_medico": medico_roberto.id_medico,
+                "id_especialidad": esp_map["Medicina General"].id_especialidad,
+                "id_servicio": 1,
+                "id_clinica": 1,
+                "fecha_cita": hoy,
+                "hora_inicio": "09:20",
+                "hora_fin": "09:50",
+                "modalidad": "PRESENCIAL",
+                "motivo": "Seguimiento de hipertensión en fila virtual demo",
+                "estado": "PENDIENTE",
+                "tipo_consulta": "GENERAL",
+            },
+            {
+                "id_paciente": pac_carlos.id_paciente,
+                "id_medico": medico_roberto.id_medico,
+                "id_especialidad": esp_map["Medicina General"].id_especialidad,
+                "id_servicio": 1,
+                "id_clinica": 1,
+                "fecha_cita": hoy,
+                "hora_inicio": "09:40",
+                "hora_fin": "10:10",
+                "modalidad": "PRESENCIAL",
+                "motivo": "Control de glucemia en fila virtual demo",
+                "estado": "CONFIRMADA",
+                "tipo_consulta": "GENERAL",
+            },
+            # --- Tenant 2: Dra. Elena + Luis (demo de aislamiento) ---
+            {
+                "id_paciente": paciente_map["6666666"].id_paciente,
+                "id_medico": medico_elena.id_medico,
+                "id_especialidad": esp_map["Pediatría"].id_especialidad,
+                "id_servicio": 1,
+                "id_clinica": 2,
+                "fecha_cita": hoy,
+                "hora_inicio": "09:15",
+                "hora_fin": "09:45",
+                "modalidad": "PRESENCIAL",
+                "motivo": "Control pediátrico en fila virtual demo",
+                "estado": "PENDIENTE",
+                "tipo_consulta": "GENERAL",
+            },
+        ]
+
+        for c_data in cola_seed:
+            existente = db.query(Cita).filter(
+                Cita.id_paciente == c_data["id_paciente"],
+                Cita.id_medico == c_data["id_medico"],
+                Cita.fecha_cita == c_data["fecha_cita"],
+                Cita.hora_inicio == c_data["hora_inicio"],
+            ).first()
+            if not existente:
+                db.add(Cita(**c_data))
+                print(f"  [+] Creada Cita CU08 para paciente {c_data['id_paciente']} hoy {c_data['hora_inicio']}")
+            else:
+                for k, v in c_data.items():
+                    setattr(existente, k, v)
+                existente.check_in = None
+                print(f"  [=] Cita CU08 reseteada para paciente {c_data['id_paciente']} hoy {c_data['hora_inicio']}")
+        db.flush()
+
+        # NOTA CU16: no se siembran recetas firmadas. Receta exige
+        # id_consulta FK + firma Ed25519 válida (firma_digital/key_id/hash_pdf
+        # NOT NULL verificables contra PRESCRIPTION_* del .env). Sembrar firmas
+        # dummy rompería la verificación pública; generarlas aquí acoplaría el
+        # seed al anillo de claves. Crear recetas demo desde la API autenticada.
 
         # Bitácora de Auditoría (CU21)
+        # NOTA: auditoria.id_clinica es NOT NULL en este backend, por eso no
+        # hay eventos globales (id_clinica=None) como en Sprint 1. El evento
+        # del superadmin se registra bajo la clínica 1 (plataforma).
         audit_events = [
             ("LOGIN", "usuarios", user_map["admin@telemedicina.com"].id_usuario, "Inicio de sesión administrativo exitoso"),
             ("CREATE", "fichas_clinicas", user_map["recepcion@telemedicina.com"].id_usuario, "Emisión de Ficha Clínica FICH-20260910-0001"),
             ("CREATE", "citas", user_map["paciente@telemedicina.com"].id_usuario, "Reserva de cita médica virtual"),
             ("UPDATE", "historias_clinicas", user_map["doctor@telemedicina.com"].id_usuario, "Actualización de antecedentes en HCE-2026-0001"),
+            ("CREATE", "clinicas", user_map["superadmin@telemedicina.com"].id_usuario, "Alta de la Red Médica del Norte como tenant SaaS"),
         ]
 
         for accion, tabla, uid, desc in audit_events:

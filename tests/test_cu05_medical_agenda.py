@@ -338,5 +338,32 @@ class CU05MedicalAgendaTestCase(unittest.TestCase):
         self.assertEqual(self.client.get("/appointments/especialidades").status_code,200)
 
 
+class CU05InterseccionHorasTestCase(unittest.TestCase):
+    """Regresión: citas.hora_inicio/hora_fin son VARCHAR en Postgres y llegan
+    como str; _intersecta debe compararlos sin TypeError (500 en /disponibilidad)."""
+
+    def test_a_hora_acepta_time_str_y_none(self):
+        from datetime import time
+        from app.modules.appointments.agenda.service import _a_hora
+
+        self.assertEqual(_a_hora(time(9, 30)), time(9, 30))
+        self.assertEqual(_a_hora("09:30"), time(9, 30))
+        self.assertEqual(_a_hora("09:30:00"), time(9, 30))
+        self.assertIsNone(_a_hora(None))
+        self.assertIsNone(_a_hora("no-es-hora"))
+
+    def test_intersecta_con_horas_varchar_no_revienta(self):
+        from datetime import time
+        from app.modules.appointments.agenda.service import _intersecta
+
+        # Solape real con strings VARCHAR -> ocupado.
+        self.assertTrue(_intersecta(time(9, 0), time(9, 30), "09:15", "09:45"))
+        # Sin solape -> libre.
+        self.assertFalse(_intersecta(time(9, 0), time(9, 30), "10:00", "10:30"))
+        # Horas incompletas -> se declara ocupado, nunca libre sin verificar.
+        self.assertTrue(_intersecta(time(9, 0), time(9, 30), None, "10:30"))
+        self.assertTrue(_intersecta(time(9, 0), time(9, 30), "no-es-hora", "10:30"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.modules.auth.dependencies import get_current_tenant_id, get_current_user
+from app.modules.auth.dependencies import get_current_tenant_id, get_current_user, require_roles
 from app.modules.auth.models import Usuario
+from app.modules.medical_records.models import Paciente
 from app.modules.medical_records.fichas import service
 from app.modules.medical_records.fichas.schemas import (
     FichaCancelRequest,
@@ -16,6 +17,21 @@ from app.modules.medical_records.fichas.schemas import (
 )
 
 router = APIRouter(tags=["Fichas Médicas"])
+
+
+def _rol_nombre(current_user: Usuario) -> str:
+    rol = getattr(current_user, "rol", None)
+    nombre = getattr(rol, "nombre", None) if rol else None
+    return (nombre or "").strip().upper()
+
+
+def _paciente_propio_id(db: Session, current_user: Usuario, tenant_id: Optional[int]) -> Optional[int]:
+    """id_paciente del usuario paciente en su tenant, o None si no tiene perfil."""
+    q = db.query(Paciente).filter(Paciente.id_usuario == current_user.id_usuario)
+    if tenant_id is not None:
+        q = q.filter(Paciente.id_clinica == tenant_id)
+    propio = q.first()
+    return propio.id_paciente if propio else None
 
 
 def _resolve_tenant_id(
@@ -45,7 +61,15 @@ def emitir_ficha(
     """
     Emite una ficha médica generando correlativo único (FICH-YYYYMMDD-XXXX)
     y validando disponibilidad de turno en tiempo real (409 Conflict ante colisión).
+    El paciente solo puede emitir para su propio registro (CU09).
     """
+    if _rol_nombre(current_user) == "PACIENTE":
+        propio_id = _paciente_propio_id(db, current_user, tenant_id)
+        if propio_id is None or payload.id_paciente != propio_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Solo puedes emitir fichas para tu propio registro",
+            )
     return service.crear_ficha(
         db=db,
         payload=payload,
@@ -71,7 +95,15 @@ def listar_fichas(
     tenant_id: int = Depends(_resolve_tenant_id),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """Retorna las fichas clínicas del tenant según los filtros solicitados."""
+    """Retorna las fichas clínicas del tenant según los filtros solicitados.
+    El paciente solo ve las suyas (se fuerza el filtro a su registro)."""
+    if _rol_nombre(current_user) == "PACIENTE":
+        propio_id = _paciente_propio_id(db, current_user, tenant_id)
+        if propio_id is None:
+            from app.modules.medical_records.fichas.schemas import FichaListResponse
+
+            return FichaListResponse(total=0, items=[])
+        id_paciente = propio_id
     return service.listar_fichas(
         db=db,
         id_clinica=tenant_id,
@@ -96,12 +128,21 @@ def detalle_ficha(
     tenant_id: int = Depends(_resolve_tenant_id),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """Obtiene el detalle completo de una ficha médica con sus secciones dinámicas JSONB."""
-    return service.obtener_ficha_detalle(
+    """Obtiene el detalle completo de una ficha médica con sus secciones dinámicas JSONB.
+    El paciente solo puede ver sus propias fichas."""
+    ficha = service.obtener_ficha_detalle(
         db=db,
         id_ficha=id_ficha,
         id_clinica=tenant_id,
     )
+    if _rol_nombre(current_user) == "PACIENTE":
+        propio_id = _paciente_propio_id(db, current_user, tenant_id)
+        if propio_id is None or ficha.id_paciente != propio_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tienes acceso a fichas de otros pacientes",
+            )
+    return ficha
 
 
 @router.patch(
@@ -114,7 +155,9 @@ def actualizar_clinica(
     payload: FichaClinicaUpdate,
     db: Session = Depends(get_db),
     tenant_id: int = Depends(_resolve_tenant_id),
-    current_user: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(
+        require_roles(["MEDICO", "ADMIN", "ADMINISTRADOR", "ADMINISTRACION"])
+    ),
 ):
     """
     Permite al médico registrar signos vitales, secciones dinámicas JSONB,
@@ -139,7 +182,9 @@ def cancelar_ficha(
     payload: FichaCancelRequest,
     db: Session = Depends(get_db),
     tenant_id: int = Depends(_resolve_tenant_id),
-    current_user: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(
+        require_roles(["ADMIN", "ADMINISTRADOR", "ADMINISTRACION", "RECEPCION", "MEDICO"])
+    ),
 ):
     """Cancela una ficha médica con registro de motivo (no permitido para FINALIZADA)."""
     return service.cancelar_ficha(

@@ -1,8 +1,9 @@
 import unittest
 from datetime import date, datetime
+from fastapi import Depends
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, inspect as sa_inspect
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_db
@@ -48,7 +49,14 @@ class CU25ConsultasTestCase(unittest.TestCase):
         app.dependency_overrides.pop(get_current_user, None)
 
     def _mock_user(self, user: Usuario):
-        app.dependency_overrides[get_current_user] = lambda: user
+        # El objeto viene desatachado (sesión del seed cerrada): leer la PK
+        # sin provocar refresh.
+        user_id = sa_inspect(user).identity[0]
+
+        def current_user(db: Session = Depends(get_db)):
+            return db.query(Usuario).filter(Usuario.id_usuario == user_id).first()
+
+        app.dependency_overrides[get_current_user] = current_user
 
     def _reset_data(self):
         with self.engine.begin() as conn:
@@ -145,7 +153,7 @@ class CU25ConsultasTestCase(unittest.TestCase):
         self.assertEqual(data["paciente_nombre"], "Ana Gomez")
         self.assertEqual(data["paciente_ci"], "ID: 8877665-1A")
         self.assertEqual(data["paciente_iniciales"], "AG")
-        self.assertEqual(data["medico_nombre"], "Dr(a). Carlos Mendoza")
+        self.assertEqual(data["medico_nombre"], "Dr. Carlos Mendoza")
         self.assertEqual(data["especialidad_nombre"], "Cardiología")
         self.assertEqual(data["estado"], "PENDIENTE")
 

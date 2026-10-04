@@ -15,7 +15,7 @@ from app.modules.medical_records.clinical_documents.schemas import (
     DocumentoClinicoCreateRequest,
     DocumentoClinicoUpdateRequest,
 )
-from app.modules.medical_records.clinical_documents.storage import storage
+from app.modules.medical_records.clinical_documents.storage import StorageError, storage
 
 PERMISO_SEARCH = "documents:search"
 PERMISO_DOWNLOAD = "documents:download"
@@ -226,7 +226,12 @@ def generate_download_url(
         raise DocumentServiceError(403, f"Permiso denegado. Se requiere el permiso '{PERMISO_DOWNLOAD}'.")
 
     file_name = doc.archivo_url.split("/")[-1]
-    url, expires = storage.generate_download_url(doc.archivo_url, file_name, "application/pdf")
+    try:
+        url, expires = storage.generate_download_url(doc.archivo_url, file_name, "application/pdf")
+    except StorageError:
+        raise DocumentServiceError(
+            404, "Archivo no disponible para este documento. Contacte a administración."
+        )
     return doc, url, expires, {"nombre_archivo": file_name, "content_type": "application/pdf"}
 
 

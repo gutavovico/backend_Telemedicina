@@ -5,6 +5,8 @@ from app.modules.auth.password_recovery.router import router as password_recover
 from app.modules.auth.users_management.router import router as users_management_router
 from app.modules.auth.roles_permissions.router import router as roles_permissions_router
 from app.modules.auth.audit.router import router as audit_router
+from app.modules.auth.tenant.router import router as tenant_router
+from app.modules.auth.clinicas.router import router as clinicas_router
 
 router = APIRouter()
 
@@ -29,4 +31,12 @@ router.include_router(roles_permissions_router, prefix="/auth")
 router.include_router(audit_router)
 router.include_router(audit_router, prefix="/api/v1")
 router.include_router(audit_router, prefix="/auth")
+
+# 5. Contexto de Tenant (SaaS multitenant, project.md §4) - /tenant/context y /api/v1/tenant/context
+router.include_router(tenant_router)
+router.include_router(tenant_router, prefix="/api/v1")
+
+# 6. Gestión de Clínicas SaaS (solo Super Admin + onboarding público) - /clinicas y /api/v1/clinicas
+router.include_router(clinicas_router)
+router.include_router(clinicas_router, prefix="/api/v1")
 
