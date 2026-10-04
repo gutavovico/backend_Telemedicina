@@ -24,6 +24,25 @@ class StorageError(Exception):
     """Error genérico del servicio de almacenamiento."""
 
 
+def _sanitize_key(key: str) -> str:
+    """Normaliza una clave de objeto y rechaza rutas/URLs absolutas.
+
+    Evita que un `archivo_url` legacy con forma de ruta web (`/api/...`)
+    genere URLs dobles como `/file//api/...`. Lanza StorageError si la
+    clave no es un path relativo válido dentro del storage.
+    """
+    normalizada = (key or "").strip().lstrip("/")
+    if (
+        not normalizada
+        or "://" in normalizada
+        or "\\" in normalizada
+        or normalizada.startswith("api/")
+        or "/api/" in normalizada
+    ):
+        raise StorageError(f"Clave de archivo inválida: {key!r}")
+    return normalizada
+
+
 class DocumentStorage:
     """Abstracción de almacenamiento de archivos para documentos clínicos."""
 
@@ -83,6 +102,8 @@ class DocumentStorage:
     def generate_download_url(self, key: str, file_name: str, content_type: str = "application/pdf") -> Tuple[str, int]:
         """Genera una URL de descarga temporal. Devuelve (url, expira_en_segundos)."""
         expires = min(max(settings.DOCUMENTO_URL_EXPIRACION, 60), 900)
+
+        key = _sanitize_key(key)
 
         if self.backend == "minio":
             url = self._minio_client.generate_presigned_url(

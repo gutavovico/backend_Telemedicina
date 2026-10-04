@@ -5,6 +5,7 @@ from app.modules.appointments.doctor_profile.router import (
 )
 from app.modules.appointments.agenda.router import router as agenda_router
 from app.modules.appointments.consultas.router import router as consultas_router
+from app.modules.appointments.live_queue.router import router as live_queue_router
 
 router = APIRouter()
 
@@ -18,6 +19,10 @@ router.include_router(router_especialidades, prefix="/appointments")
 
 # 3. Rutas de Agenda Médica (CU05)
 router.include_router(agenda_router)
+
+# 3b. Fila virtual y tiempos de espera (CU08): /cola y /api/v1/cola
+router.include_router(live_queue_router)
+router.include_router(live_queue_router, prefix="/api/v1")
 
 # 4. Rutas de Consultas y Citas Médicas (CU25)
 router.include_router(consultas_router, prefix="/appointments/consultas")

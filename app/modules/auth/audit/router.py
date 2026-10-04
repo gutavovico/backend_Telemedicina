@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.modules.auth.dependencies import get_current_user, get_current_tenant_id, require_roles
+from app.modules.auth.dependencies import get_current_user, get_current_tenant_id, require_roles, _is_global_super_admin
 from app.modules.auth.models import Usuario
 from app.modules.auth.audit import service
 from app.modules.auth.audit.schemas import AuditLogEntry, AuditLogListResponse
@@ -15,9 +15,15 @@ router = APIRouter(prefix="/audit-log", tags=["Bitácora de Auditoría (CU21)"])
 
 
 def _resolve_audit_tenant_id(current_user: Usuario, tenant_id: Optional[int]) -> Optional[int]:
-    """Resuelve tenant_id para auditoría: los administradores de tenant sólo ven su clínica."""
-    # Si el usuario es Super Admin global (rol_id 1 o sin id_clinica)
-    if current_user.id_rol == 1 and current_user.id_clinica is None:
+    """Resuelve tenant_id para auditoría: los administradores de tenant sólo ven su clínica.
+
+    Alineado con core/multitenancy.is_super_admin: solo el superadmin global
+    verificado (rol global id_clinica=None, p. ej. "Super Administrador")
+    obtiene vista global (None) sin header; un admin de tenant desvinculado
+    nunca hereda acceso global vía header.
+    """
+    # Si el usuario es Super Admin global verificado
+    if _is_global_super_admin(current_user):
         return tenant_id
     if tenant_id is not None:
         return tenant_id

@@ -247,8 +247,17 @@ def _hora_cita(valor):
     return hora if isinstance(hora, time) and hora.tzinfo is None else None
 
 
+def _a_hora(valor):
+    """Normaliza TIME/varchar con las mismas reglas seguras de las citas."""
+    return _hora_cita(valor)
+
+
 def _intersecta(inicio, fin, otro_inicio, otro_fin):
     # Horas incompletas: no declarar libre un periodo que no podemos verificar.
+    inicio, fin = _a_hora(inicio), _a_hora(fin)
+    otro_inicio, otro_fin = _a_hora(otro_inicio), _a_hora(otro_fin)
+    if inicio is None or fin is None:
+        return True
     return otro_inicio is None or otro_fin is None or inicio < otro_fin and fin > otro_inicio
 
 
