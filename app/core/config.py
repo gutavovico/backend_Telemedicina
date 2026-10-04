@@ -30,11 +30,35 @@ class Settings(BaseSettings):
     # Envío de correo (SMTP). Con EMAIL_ENABLED=False el código se muestra en consola.
     EMAIL_ENABLED: bool = False
     EMAIL_FROM_NAME: str = "Telemedicina - Hospital San Juan de Dios"
+
+    # ------------------------------------------------------------------ #
+    # CU23 - Control de inactividad y cierre automático de sesión
+    # ------------------------------------------------------------------ #
+    # Ventana de inactividad por sesión. Al superarla, el backend revoca el `jti`
+    # de ESA sesión y devuelve 401, sin afectar a los demás dispositivos del
+    # usuario que sigan activos.
+    INACTIVITY_TIMEOUT_MINUTES: int = 15
+    # Margen con el que las interfaces avisan antes del cierre, para que el
+    # usuario pueda seguir la sesión. El contador se calcula sobre el servidor.
+    INACTIVITY_WARNING_SECONDS: int = 60
+    # No se escribe `ultima_actividad` en cada petición si la marca es más
+    # reciente que este intervalo: acota el coste de una escritura por petición.
+    INACTIVITY_TOUCH_INTERVAL_SECONDS: int = 60
+
+    # ------------------------------------------------------------------ #
+    # CU23 - Canal de recuperación por SMS (deshabilitado - solo email)
+    # ------------------------------------------------------------------ #
+    # Proveedor de SMS: "console" (valor por defecto, no llama a terceros) o
+    # "twilio". Se elige por configuracion y ambos cumplen el mismo puerto.
+    SMS_PROVIDER: str = "console"
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_FROM_NUMBER: str = ""
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""
-    SMTP_FROM: str = "no-reply@telemedicina.com"
+    SMTP_USER: str = "admin.telemedicina@gmail.com"
+    SMTP_PASSWORD: str = "tzwmnnlzksgsonjq"
+    SMTP_FROM: str = "admin.telemedicina@gmail.com"
 
     # CORS
     CORS_ORIGINS: str = "http://localhost:4200"

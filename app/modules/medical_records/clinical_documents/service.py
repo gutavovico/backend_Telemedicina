@@ -49,8 +49,9 @@ def _apply_role_scope(db: Session, query, current_user: Usuario, tenant_id: Opti
     q = query
 
     # Aislamiento estricto por inquilino
-    if tenant_id is not None:
-        q = q.filter(DocumentoClinico.id_clinica == tenant_id)
+    if tenant_id is None:
+        raise DocumentServiceError(403, "No se pudo resolver el tenant del usuario")
+    q = q.filter(DocumentoClinico.id_clinica == tenant_id)
 
     # Filtro por tipo de documento y verificación granular de recepción
     tipo = filters.get("tipo_documento")
@@ -115,7 +116,7 @@ def get_document_or_404(
     doc = db.query(DocumentoClinico).filter(DocumentoClinico.id_documento == id_documento).first()
     if not doc or doc.estado != "ACTIVO":
         return None
-    if tenant_id is not None and doc.id_clinica != tenant_id:
+    if tenant_id is None or doc.id_clinica != tenant_id:
         return None
 
     # Alcance por rol

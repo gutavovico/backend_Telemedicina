@@ -6,6 +6,7 @@ from app.modules.auth.schemas import UsuarioCreate
 from app.core.security import hash_password, verify_password
 from app.core.security import generate_reset_code, verify_reset_code
 from app.core.email import send_password_reset_email
+from app.core.sms import send_password_reset_sms
 
 
 FORGOT_PASSWORD_GENERIC = (
@@ -24,13 +25,13 @@ def get_user_by_id(db: Session, id_usuario: int) -> Optional[Usuario]:
 
 
 def request_password_reset(db: Session, correo: str) -> Optional[str]:
-    """Genera y envía el código de recuperación de contraseña (CU23).
+    """Genera y envía el código de recuperación por correo (CU23).
 
     Devuelve la respuesta genérica siempre (no filtra correos registrados).
     Retorna debug_code solo en modo desarrollo para facilitar la demo.
     """
     user = get_user_by_email(db, correo)
-    if not user or user.estado != "activo":
+    if not user or user.estado.lower() != "activo":
         # Respuesta genérica para no revelar correos existentes
         return None
 
@@ -39,10 +40,31 @@ def request_password_reset(db: Session, correo: str) -> Optional[str]:
     return debug_code
 
 
+def request_password_reset_sms(db: Session, correo: str) -> Optional[str]:
+    """Genera y envía el código de recuperación por SMS (CU23).
+
+    Si el usuario existe y está activo pero no tiene teléfono registrado, no se
+    genera ningún código, sin embargo NO se filtra esa ausencia: el endpoint
+    devuelve igualmente el mensaje genérico. Esa distinción es exactamente la del
+    escenario anti-enumeración, que exige que un usuario sin teléfono y un correo
+    no registrado produzcan respuestas indistinguibles.
+    """
+    user = get_user_by_email(db, correo)
+    if not user or user.estado.lower() != "activo":
+        return None
+
+    if not user.telefono:
+        return None
+
+    codigo = generate_reset_code(user.id_usuario)
+    debug_code = send_password_reset_sms(user.telefono, codigo)
+    return debug_code
+
+
 def reset_password(db: Session, correo: str, codigo: str, nueva_password: str) -> None:
     """Valida el código y actualiza la contraseña del usuario (CU23)."""
     user = get_user_by_email(db, correo)
-    if not user or user.estado != "activo":
+    if not user or user.estado.lower() != "activo":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No se pudo restablecer la contraseña. Verifica los datos.",

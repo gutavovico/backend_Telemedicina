@@ -1,312 +1,413 @@
-# README_Miguel — Plataforma de Telemedicina
+---
 
-Proyecto de la asignatura **Sistemas de Información 2** para el **Hospital San Juan de Dios**.
-Sistema de gestión médica con telemedicina: agendamiento de citas, teleconsultas, historia clínica digital, recetas electrónicas, laboratorio y asistencia por IA.
+## Guía de Prueba: CU23, CU10, CU12 — Web PC y Móvil Web
 
-El proyecto está dividido en **tres repositorios independientes**:
+### Credenciales de Prueba (Neon + Seed)
 
-| Carpeta | Rol | Tecnología |
-|---|---|---|
-| `backend_Telemedicina/` | API REST + lógica de negocio + base de datos | FastAPI, SQLAlchemy, Alembic, PostgreSQL |
-| `frontend_Telemedicina/` | Interfaz de usuario (Web Admin) | Angular 21, Angular Material, Tailwind CSS |
-| `mobile_telemedicina/` | Interfaz móvil (PWA) | Flutter Web 3.47, Provider, Material 3 |
+Todas las cuentas usan `password123` salvo los admins/doctores con sus propios passwords.
 
-## Estado actual del avance
+| Rol | Email | Password | Tenant (Clínica) | Permisos Clave |
+|-----|-------|----------|------------------|----------------|
+| **ADMIN** | `admin@telemedicina.com` | `admin123` | Clinica Central (1) | Todos |
+| **MÉDICO** | `doctor@telemedicina.com` | `doctor123` | Clinica Central (1) | Todos (incl. resultados lab) |
+| **RECEPCIÓN** | `recepcion@telemedicina.com` | `recepcion123` | Clinica Central (1) | Sin resultados lab |
+| **PACIENTE (Carlos)** | `paciente.carlos@telemedicina.com` | `paciente123` | Clinica Central (1) | Solo sus docs |
+| **PACIENTE (Ana)** | `paciente.ana@telemedicina.com` | `paciente123` | Clinica Central (1) | Solo sus docs |
+| **MÉDICO (Norte)** | `medico.norte@telemedicina.com` | `medico123` | Clinica Norte (2) | Solo tenant 2 |
+| **PACIENTE (Luis Norte)** | `paciente.luis@telemedicina.com` | `paciente123` | Clinica Norte (2) | Solo tenant 2 |
 
-- **CU01 Iniciar sesión (completado):** registro de usuarios, login, refresh de tokens y perfil autenticado funcionando de punta a punta (backend + frontend).
-- **CU23 Recuperar Acceso (completado):** recuperación de contraseña por correo con código de 6 dígitos (backend + frontend) y cierre de sesión automático por inactividad (frontend). Paquete (pkg) **Autenticación y seguridad**.
-  - Hash del doctor corregido (bcrypt válido)
-  - Comparación de estado case-insensitive (`user.estado.lower()`)
-  - Try-except en SMTP para fallback graceful (no muestra error si el correo se envió)
-  - 4 roles funcionando: Administrador, Médico, Recepción, Paciente
-  - Módulos nuevos: `organization` (Clinica, Rol) y `security` (Notificacion, Auditoria)
-- **CU23 Recuperar Acceso en móvil (completado):** Flutter Web (PWA) con pantallas Forgot/Reset Password, integración con endpoints backend existentes.
-- **Módulos pendientes:** citas, historias clínicas, comunicaciones, asistencia IA y analítica existen como esqueletos vacíos (`app/modules/` en backend y `features/` en frontend), sin lógica implementada.
-
-| Estado | Descripción |
-|---|---|
-| Estructura base FE/BE | Completado |
-| Autenticación (registro, login, refresh) | Completado |
-| CU23 Recuperar Acceso (correo + inactividad) | Completado |
-| CU23 Recuperar Acceso móvil (Flutter Web) | Completado |
-| Citas (`appointments`) | Pendiente |
-| Historias clínicas (`medical-records`) | Pendiente |
-| Comunicaciones (`communications`) | Pendiente |
-| Asistente IA (`ai_assistant`) | Pendiente |
-| Analítica / reportes (`analytics`) | Pendiente |
+> **Nota:** Para CU10 (Órdenes de Laboratorio), los exámenes del catálogo son: `HEMOGRAMA`, `GLUCOSA`, `CREATININA`, `UREA`, `COLESTEROL_TOTAL`, `TRIGLICERIDOS`, `HEMOGLOBINA_GLICADA`, `TGO_TGP`, `ORINA_COMPLETA`, `COPROLOGICO`.
 
 ---
 
-## Stack tecnológico
+## 🚀 Levantar los 3 Servicios (3 CMD separadas)
 
-| Capa | Tecnología | Detalle |
-|---|---|---|
-| Frontend (Admin) | Angular 21.2 (CLI `ng`) | Standalone components + signals, SSR habilitado |
-| UI | Angular Material 21 + Tailwind CSS 4 | Componentes y estilos |
-| Móvil (PWA) | Flutter Web 3.47 | Compila a JS/HTML/CSS, Provider state management, Material 3 theming |
-| Backend | FastAPI + Uvicorn | API REST documentada en `/docs` |
-| ORM | SQLAlchemy 2.0 + Alembic | Modelos y migraciones |
-| Base de datos | PostgreSQL en Neon | 42 tablas |
-| Autenticación | JWT (python-jose) + bcrypt | Access token (30 min) + refresh token (7 días) |
-| Validación | Pydantic v2 + pydantic-settings | Schemas y variables de entorno |
-
----
-
-## Estructura del proyecto
-
+### Terminal 1 — Backend (FastAPI)
+```cmd
+cd /d D:\Proyectos si 2\PROYECTO SI2\backend_Telemedicina
+..\venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
 ```
-PROYECTO SI2/
-├── backend_Telemedicina/
-│   ├── app/
-│   │   ├── core/                 # Config, BD, seguridad
-│   │   │   ├── config.py        # Settings (.env): BD, JWT, CORS, SMTP, reset code
-│   │   │   ├── database.py      # Engine SQLAlchemy + sesión
-│   │   │   ├── email.py         # Envío de correo (SMTP) + fallback a consola
-│   │   │   └── security.py      # Hash bcrypt + JWT + código reset HMAC
-│   │   ├── modules/
-│   │   │   ├── auth/            # ✔ Registro, login, refresh, /me, forgot/reset password
-│   │   │   ├── appointments/    # vacío
-│   │   │   ├── medical_records/ # vacío
-│   │   │   ├── communications/  # vacío
-│   │   │   ├── ai_assistant/    # vacío
-│   │   │   └── analytics/       # vacío
-│   │   └── main.py              # FastAPI app + CORS + routers
-│   ├── alembic/                 # Migraciones
-│   ├── scripts/
-│   │   ├── seed.py              # Usuarios iniciales
-│   │   └── test_endpoints.py    # Pruebas de endpoints (incluye CU23)
-│   └── requirements.txt
-├── frontend_Telemedicina/
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── core/
-│   │   │   │   ├── services/auth.service.ts   # Login, tokens, perfil, recuperación
-│   │   │   │   ├── services/inactivity.service.ts # Cierre por inactividad (CU23)
-│   │   │   │   ├── guards/auth.guard.ts       # Protección de rutas
-│   │   │   │   ├── interceptors/auth.interceptor.ts # JWT + auto-refresh
-│   │   │   │   └── models/auth.models.ts
-│   │   │   ├── features/
-│   │   │   │   ├── home/          # Landing page
-│   │   │   │   ├── auth/login/    # Inicio de sesión
-│   │   │   │   ├── auth/register/ # Registro
-│   │   │   │   ├── auth/recover/  # Recuperar contraseña (solicitar código)
-│   │   │   │   ├── auth/reset-password/ # Restablecer contraseña (código)
-│   │   │   │   ├── appointments/  # vacío
-│   │   │   │   ├── medical-records/ # vacío
-│   │   │   │   ├── communications/ # vacío
-│   │   │   │   ├── ai-assistant/  # vacío
-│   │   │   │   └── analytics/     # vacío
-│   │   │   └── shared/
-│   │   │       ├── components/header/  # Header con menú de usuario
-│   │   │       └── components/footer/  # Footer
-│   │   ├── environments/          # environment.ts (apiUrl localhost:8000)
-│   │   └── styles.css
-│   └── package.json
-└── mobile_telemedicina/
-    ├── lib/
-    │   ├── core/
-    │   │   ├── config/api_config.dart      # URLs backend (10.0.2.2 para emulador)
-    │   │   ├── network/api_client.dart     # HTTP client con auth interceptors
-    │   │   ├── storage/secure_storage_service.dart # Tokens + user cache
-    │   │   └── theme/                      # Colors, typography, theme
-    │   ├── features/
-    │   │   └── auth/
-    │   │       ├── data/
-    │   │       │   ├── models/auth_models.dart       # ← +Forgot/Reset models
-    │   │       │   └── datasources/auth_remote_datasource.dart # ← +forgot/reset
-    │   │       ├── presentation/
-    │   │       │   ├── controllers/auth_controller.dart      # ← +forgot/reset methods
-    │   │       │   ├── screens/
-    │   │       │   │   ├── login_screen.dart                 # ← +link "¿Olvidaste?"
-    │   │       │   │   ├── forgot_password_screen.dart       # 🆕 Nueva
-    │   │       │   │   ├── reset_password_screen.dart        # 🆕 Nueva
-    │   │       │   │   ├── register_screen.dart
-    │   │       │   │   ├── splash_screen.dart
-    │   │       │   │   └── home_screen.dart
-    │   │       │   └── widgets/              # CustomTextField, AuthButton, AuthBanner, etc.
-    │   └── main.dart                       # ← +rutas /forgot-password, /reset-password
-    ├── pubspec.yaml
-    └── README.md
+> URL: http://127.0.0.1:8000 | Docs: http://127.0.0.1:8000/docs
+
+---
+
+### Terminal 2 — Frontend Web (Angular)
+```cmd
+cd /d D:\Proyectos si 2\PROYECTO SI2\frontend_Telemedicina
+npm run start
+```
+> URL: http://localhost:4200
+
+---
+
+### Terminal 3 — Mobile Web (Flutter)
+```cmd
+cd /d D:\Proyectos si 2\PROYECTO SI2\mobile_telemedicina
+flutter run -d chrome --web-port 8080
+```
+> URL: http://localhost:8080
+
+---
+
+## 🔐 Credenciales Neon (Base de Datos PostgreSQL)
+
+Estas son las credenciales configuradas en `.env` del backend para conectar a Neon:
+
+```env
+DB_NAME=Telemedicina
+DB_USER=neondb_owner
+DB_PASSWORD=npg_yMFcXO8AYpI1
+DB_HOST=ep-steep-shadow-ay9kgisu-pooler.c-5.us-east-2.aws.neon.tech
+DB_PORT=5432
+```
+
+**Connection String completa:**
+```
+postgresql://neondb_owner:npg_yMFcXO8AYpI1@ep-steep-shadow-ay9kgisu-pooler.c-5.us-east-2.aws.neon.tech:5432/Telemedicina?sslmode=require
+```
+
+> **Nota:** La base de datos ya tiene las migraciones aplicadas (hasta `007_crear_catalogo_examenes`) y el seed de datos cargado (cuentas de prueba, catálogo de exámenes, permisos).
+
+---
+
+## 🚀 Levantar los 3 Servicios (3 CMD separadas)
+
+### Terminal 1 — Backend (FastAPI)
+```cmd
+cd /d D:\Proyectos si 2\PROYECTO SI2\backend_Telemedicina
+..\venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
+```
+
+### Terminal 2 — Frontend Web (Angular)
+```cmd
+cd /d D:\Proyectos si 2\PROYECTO SI2\frontend_Telemedicina
+npm run start
+```
+
+### Terminal 3 — Mobile Web (Flutter)
+```cmd
+cd /d D:\Proyectos si 2\PROYECTO SI2\mobile_telemedicina
+flutter run -d chrome --web-port 8080
 ```
 
 ---
 
-## Cómo levantar el proyecto
+## 🔐 Credenciales de Prueba (Neon + Seed)
 
-### Requisitos previos
+Todas las cuentas usan `password123` salvo los admins/doctores con sus propios passwords.
 
-- Python 3.10+ (backend)
-- Node.js (Angular CLI 21)
-- Flutter 3.47+ (mobile_telemedicina)
-- PostgreSQL local (por ahora: `localhost:5432`, user `postgres`, pass `12345`, BD `telemedicina`; definir también en `.env`). El esquema de 42 tablas está diseñado para Neon.
+| Rol | Email | Password | Tenant (Clínica) | Permisos Clave |
+|-----|-------|----------|------------------|----------------|
+| **ADMIN** | `admin@telemedicina.com` | `admin123` | Clinica Central (1) | Todos |
+| **MÉDICO** | `doctor@telemedicina.com` | `medico123` | Clinica Central (1) | Todos (incl. resultados lab) |
+| **RECEPCIÓN** | `recepcion@telemedicina.com` | `recepcion123` | Clinica Central (1) | Sin resultados lab |
+| **PACIENTE (Carlos)** | `paciente.carlos@telemedicina.com` | `paciente123` | Clinica Central (1) | Solo sus docs |
+| **PACIENTE (Ana)** | `paciente.ana@telemedicina.com` | `paciente123` | Clinica Central (1) | Solo sus docs |
+| **MÉDICO (Norte)** | `medico.norte@telemedicina.com` | `medico123` | Clinica Norte (2) | Solo tenant 2 |
+| **PACIENTE (Luis Norte)** | `paciente.luis@telemedicina.com` | `paciente123` | Clinica Norte (2) | Solo tenant 2 |
 
-### Backend (FastAPI)
+> **Nota:** Para CU10 (Órdenes de Laboratorio), los exámenes del catálogo son: `HEMOGRAMA`, `GLUCOSA`, `CREATININA`, `UREA`, `COLESTEROL_TOTAL`, `TRIGLICERIDOS`, `HEMOGLOBINA_GLICADA`, `TGO_TGP`, `ORINA_COMPLETA`, `COPROLOGICO`.
+
+---
+
+## CU23 — Recuperar Acceso + Cierre por Inactividad
+
+**Descripción:** Recuperación de contraseña por **correo electrónico** (código 6 dígitos, 30 min, 5 intentos máx) + cierre automático de sesión por inactividad (15 min, aviso 60s). **El canal SMS está deshabilitado; solo email.**
+
+---
+
+### Web PC (Angular — http://localhost:4200)
+
+#### 1. Recuperar contraseña por EMAIL (Gmail real configurado)
+1. Ir a `/recuperar` (o click "¿Olvidaste tu contraseña?" en Login)
+2. Ingresar email: `doctor@telemedicina.com` (o cualquier email registrado)
+3. Click **"Enviar código de recuperación"** (canal email por defecto)
+4. **Respuesta exitosa:** Toast verde "Solicitud enviada. Si el correo está registrado, recibirás un código..."
+5. **En producción (EMAIL_ENABLED=True):** El código de 6 dígitos llega al email real (Gmail configurado con App Password)
+   - Revisar bandeja de entrada/spam en `admin.telemedicina@gmail.com` (desde: `Telemedicina - Hospital San Juan de Dios <admin.telemedicina@gmail.com>`)
+   - Asunto: "Recuperación de contraseña - Hospital San Juan de Dios"
+7. Ir a `/recuperar-contrasena`
+8. Ingresar email + código recibido + nueva contraseña (`NuevaPass123`)
+9. Click **"Restablecer"** → "Contraseña restablecida exitosamente" → Redirige a Login
+
+#### 2. Casos Edge
+- **Email no registrado:** `noexiste@test.com` → Mismo mensaje genérico (anti-enumeración)
+- **Canal inválido:** `telegram` → 422 Validation Error (solo `email` permitido)
+
+#### 3. Cierre por Inactividad (Auto)
+- Ventana: **15 minutos** sin actividad
+- Aviso: **60 segundos** antes con cuenta regresiva
+- Botón **"Seguir conectado"** renueva sesión (POST `/auth/session/continue`)
+- Al agotar: Limpia localStorage + redirige a `/login?inactive=true`
+- **Reconciliación:** Al recuperar foco/visibilidad, sincroniza reloj con `GET /auth/session`
+
+---
+
+### Móvil Web (Flutter Web — http://localhost:8080)
+
+#### CU23 — Recuperar Acceso + Inactividad
+
+**Pantallas:**
+- `ForgotPasswordScreen`: **Solo canal Email** (SMS deshabilitado — SegmentedButton removido) → Email → Enviar código
+- `ResetPasswordScreen`: Código + nueva contraseña → Redirige a Login
+- `InactivityWarningListener`: Overlay con cuenta regresiva 60s + botón "Seguir conectado"
+
+**Flujos:**
+1. **Recuperar por Email:** Login screen → "¿Olvidaste tu contraseña?" → Email → "Enviar código" → Revisa Gmail real → `/recuperar-contrasena` → Código + nueva pass
+2. **Inactividad:** Auto-detecta background/foreground → Aviso 60s antes → "Seguir conectado" renueva sesión → Expira → Limpia storage → Redirige a Login con `?inactive=true`
+
+> **Configuración Email (Gmail) en `.env`:**
+> ```env
+> EMAIL_ENABLED=True
+> SMTP_HOST=smtp.gmail.com
+> SMTP_PORT=587
+> SMTP_USER=admin.telemedicina@gmail.com
+> SMTP_PASSWORD=tzwmnnlzksgsonjq  # App Password (sin espacios)
+> SMTP_FROM=admin.telemedicina@gmail.com
+> EMAIL_FROM_NAME=Telemedicina - Hospital San Juan de Dios
+> EMAIL_ENABLED=True
+> SMS_PROVIDER=console  # SMS deshabilitado
+> ```
+
+---
+
+## CU10 — Emitir Órdenes de Laboratorio
+
+**Descripción:** Crear orden en borrador → Seleccionar exámenes del catálogo → Firmar digitalmente (HMAC-SHA256) → Generar PDF → Indexar en HCE (`documentos_clinicos` tipo `ORDEN_LAB`) → Descarga segura.
+
+---
+
+### Web PC (Angular — http://localhost:4200)
+
+#### Roles que pueden **CREAR + FIRMAR**: **MÉDICO** (propias), **ADMIN** (todas)
+#### Roles que pueden **VER/DESCARGAR**: **ADMIN**, **RECEPCIÓN**, **PACIENTE** (propias vía HCE)
+
+#### 1. Crear Orden (Borrador) — Solo MÉDICO
+1. Login: `doctor@telemedicina.com` / `doctor123`
+2. Ir a **Órdenes de Laboratorio** (menú lateral o `/ordenes-laboratorio`)
+3. Click **"Nueva Orden"** (`/ordenes-laboratorio/nueva`)
+4. **Paciente:** Buscar/seleccionar ID (ej: `10` = Carlos Mamani)
+5. **Exámenes:** 
+   - Click **"Añadir examen"**
+   - Escribir código: `HEMOGRAMA` → autocompletado muestra "Hemograma Completo (HEMATOLOGIA)"
+   - Indicaciones: `En ayunas 12 horas`
+   - Click **"Añadir examen"** → `GLUCOSA` → `Post-prandial 2h`
+5. Click **"Crear orden en borrador"**
+6. **Resultado:** Redirige a detalle → Badge **"BORRADOR"**, exams listados, botón **"Firmar y emitir orden"**
+
+#### 2. Firmar y Emitir — Solo MÉDICO creador
+1. En detalle de orden BORRADOR → Click **"Firmar y emitir orden"**
+2. **Backend:** Firma HMAC-SHA256 (clave derivada HKDF por médico) + Genera PDF (reportlab) + Sube a storage + Indexa en `documentos_clinicos` tipo `ORDEN_LAB`
+4. **Resultado:** Badge **"FIRMADA"**, muestra **Firma Digital** (64 chars hex) + **Hash SHA-256** del PDF
+5. **HCE:** La orden aparece en `documentos_clinicos` tipo `ORDEN_LAB` → visible en módulo Documentos
+
+#### 3. Listar y Filtrar
+- **MÉDICO:** Solo sus órdenes (`/ordenes-laboratorio` + filtro `id_medico = current_user`)
+- **ADMIN/RECEPCIÓN:** Todas del tenant
+- Filtros: Estado (BORRADOR/FIRMADA/ANULADA), Paciente, Fecha desde/hasta, Búsqueda por examen/paciente
+
+#### 4. Descargar PDF
+- En detalle de orden **FIRMADA** → Click **"Generar URL de descarga"** → **"Descargar PDF"**
+- URL firmada ≤ 900s (MinIO presigned o endpoint local autenticado)
+- Registra auditoría `DESCARGAR_ORDEN_LABORATORIO` + notifica al paciente
+
+#### 5. PACIENTE ve sus órdenes
+- Login: `paciente.carlos@telemedicina.com` / `paciente123`
+- En **Documentos Clínicos** (`/mis-documentos`) → Filtro tipo `ORDEN_LAB` → ve sus órdenes firmadas + descarga
+
+---
+
+### Móvil Web (Flutter Web — http://localhost:8080)
+
+#### CU10 — Órdenes de Laboratorio
+
+**Pantallas:**
+- `OrdenesLaboratorioListScreen`: ListView + filtros chips (Estado) + pull-to-refresh + FAB "Nueva Orden"
+- `OrdenLaboratorioFormScreen`: Selector exámenes (chips + bottom sheet búsqueda) + indicaciones por examen + botón "Firmar y emitir"
+- `OrdenLaboratorioDetailScreen`: Detalle + firma digital/hash + botón descarga → `DocumentViewerScreen` (syncfusion_flutter_pdfviewer)
+
+**Flujo completo MÉDICO:**
+1. Login: `doctor@telemedicina.com` / `doctor123`
+2. Tap **Órdenes de Laboratorio** (tab inferior o drawer lateral)
+3. Tap **FAB +** → Nueva Orden
+3. Buscar paciente (ID `10` = Carlos Mamani)
+4. **Añadir examen**: Tap "Añadir examen" → Buscar `HEMOGRAMA` → Indicaciones: `En ayunas 12 horas`
+5. Tap **"Añadir examen"** → Buscar `GLUCOSA` → Indicaciones: `Post-prandial 2h`
+6. Tap **"Crear orden en borrador"** → Redirige a detalle → Badge **BORRADOR**
+6. Tap **"Firmar y emitir orden"** → Badge **FIRMADA**, muestra Firma Digital + Hash SHA-256
+7. Tap **"Descargar PDF"** → `DocumentViewerScreen` con zoom/navegación páginas
+
+**Flujo PACIENTE:**
+1. Login: `paciente.carlos@telemedicina.com` / `paciente123`
+2. Tap **Mis Documentos** → Filtro `ORDEN_LAB` → Ve sus órdenes + descarga
+
+---
+
+## CU12 — Consultar Documentos Clínicos y Exámenes
+
+**Descripción:** Buscar, listar, ver detalle y descargar recetas, órdenes médicas, resultados de laboratorio, certificados e indicaciones.
+
+---
+
+### Web PC (Angular — http://localhost:4200)
+
+#### Roles y Permisos
+| Rol | Permisos |
+|-----|----------|
+| **ADMIN** | Todos los tipos, crear/actualizar/anular, descargar, auditoría |
+| **MÉDICO** | Igual ADMIN + crear/actualizar sus docs |
+| **RECEPCIÓN** | RECETA, ORDEN_LAB, CERTIFICADO, INDICACIÓN (NO `RESULTADO_LAB`) |
+| **PACIENTE** | Solo sus propios documentos |
+
+#### 1. Listado General — ADMIN/MÉDICO/RECEPCIÓN
+1. Login según rol
+2. Ir a **Documentos Clínicos** (`/documentos`)
+3. Filtros disponibles:
+   - **Tipo:** `RECETA`, `ORDEN_LAB`, `RESULTADO_LAB`, `CERTIFICADO`, `INDICACION`
+   - **Paciente:** ID (solo ADMIN/MEDICO/RECEPCIÓN)
+   - **Fechas:** Desde / Hasta
+   - **Búsqueda:** Por título
+   - **Paginación:** 10/25/50 por página
+
+#### 2. Mis Documentos — PACIENTE
+1. Login: `paciente.carlos@telemedicina.com` / `paciente123`
+2. Ir a **Mis Documentos** (`/mis-documentos`)
+3. Solo ve sus documentos (filtro automático `id_paciente`)
+
+#### 3. Documentos de Paciente — ADMIN/MEDICO/RECEPCIÓN
+1. Ir a `/documentos/paciente/{idPaciente}` (ej: `/documentos/paciente/10`)
+2. Lista documentos de ese paciente en el tenant
+
+#### 4. Detalle + Descarga
+1. Click fila → Detalle (`/documentos/{id}` o `/mis-documentos/{id}`)
+2. Ver metadata: tipo, título, fecha, paciente, firmante, descripción, metadatos
+3. **Descargar:** Click **"Descargar"** → genera URL firmada ≤ 900s
+4. **Auditoría + Notificación:** Automática al descargar (registra en `auditoria`, notifica al paciente)
+
+#### 5. RECEPCIÓN — Restricción RESULTADO_LAB
+- En lista: Select `RESULTADO_LAB` → Toast 403 "Permiso denegado..."
+- Click Ver/Descargar en resultado lab → 403
+- Otros tipos (RECETA, ORDEN_LAB, CERTIFICADO) → OK
+
+---
+
+### Móvil Web (Flutter Web — http://localhost:8080)
+
+#### CU12 — Documentos Clínicos y Exámenes
+
+**Pantallas:**
+- `DocumentsListScreen`: ListView + chips filtros (Todos/Recetas/Órdenes Lab/Resultados Lab/Certificados) + pull-to-refresh
+- `DocumentViewerScreen`: `syncfusion_flutter_pdfviewer` con zoom, navegación páginas
+- Descarga: `ClinicalDocumentService.downloadDocumentBytes()` → guarda en dispositivo
+
+**Flujos por rol:**
+| Rol | Qué hacer en móvil |
+|-----|-------------------|
+| **MÉDICO** | Tap **Documentos** → Filtros chips → Tap fila → Ver detalle → Descargar |
+| **RECEPCIÓN** | Igual pero `RESULTADO_LAB` → 403 al tap |
+| **PACIENTE** | Tap **Mis Documentos** → Solo sus docs → Tap → Ver/Descargar |
+
+**Navegación:**
+- **Drawer lateral** (hamburguesa ☰): Menú con Documentos, Órdenes Lab, Perfil, Cerrar sesión
+- **Tabs inferiores**: Home | Documentos | Órdenes Lab | Perfil
+
+---
+
+## CU23 — Recuperar Acceso + Inactividad (Móvil Web)
+
+**Pantallas:**
+- `ForgotPasswordScreen`: **Solo canal Email** (SMS deshabilitado) → Email → Enviar código
+- `ResetPasswordScreen`: Código + nueva contraseña → Redirige a Login
+- `InactivityWarningListener`: Overlay con cuenta regresiva 60s + botón "Seguir conectado"
+
+**Flujos:**
+1. **Recuperar por Email:** Login screen → "¿Olvidaste tu contraseña?" → Email → "Enviar código" → Revisa Gmail real → `/recuperar-contrasena` → Código + nueva pass
+2. **Inactividad:** Auto-detecta background/foreground → Aviso 60s antes → "Seguir conectado" renueva sesión → Expira → Limpia storage → Redirige a Login con `?inactive=true`
+
+---
+
+## Resumen: Qué probar en cada plataforma
+
+| CU | Web PC ✅ | Móvil Web ✅ |
+|----|-----------|--------------|
+| **CU23 - Recuperar** | Email real → Gmail → Código → Reset | Igual (solo email) |
+| **CU23 - Inactividad** | Aviso 60s + overlay + reconcilia foco | Overlay nativo + reconcilia background/foreground |
+| **CU10 - Crear** | Form + Autocomplete + Chips | Form + Bottom Sheet + Chips |
+| **CU10 - Firmar** | Click → PDF nueva pestaña | Tap → Visor nativo (zoom pinch) |
+| **CU10 - HCE** | Ver en `/documentos` | Ver en "Mis Documentos" + filtro `ORDEN_LAB` |
+| **CU12 - Listar** | Sidebar + Filtros dropdown | Chips + Pull-to-refresh |
+| **CU12 - Visor PDF** | Nueva pestaña + zoom botones | Visor nativo + pinch-to-zoom |
+| **CU12 - Descarga** | Blob + saveAs | Archivo local (descarga nativa) |
+| **CU12 - Permisos** | RECEPCIÓN sin resultados | RECEPCIÓN sin resultados (403 tap) |
+
+---
+
+## Verificación Rápida (Health Check)
 
 ```bash
+# Backend API
+curl http://localhost:8000/health
+# {"status":"ok","app":"Telemedicina API","version":"1.0.0"}
+
+# Frontend
+curl http://localhost:4200
+# HTML con <app-root>
+
+# Mobile Web
+curl http://localhost:8080
+# HTML con Flutter bootstrap
+
+# OpenSpec validation (en cada repo specs/Telemmedicina-SDD)
+$env:OPENSPEC_TELEMETRY=0; npx @fission-ai/openspec@latest doctor
+$env:OPENSPEC_TELEMETRY=0; npx @fission-ai/openspec@latest validate --all --strict
+```
+
+---
+
+## Tests Completos
+
+```bash
+# Backend (93 tests)
 cd backend_Telemedicina
-python -m venv venv
-venv\Scripts\activate          # Windows
-pip install -r requirements.txt
-alembic upgrade head           # crea la tabla usuarios (BD local)
-python scripts/seed.py         # crea usuarios iniciales
-python -m uvicorn app.main:app --reload --port 8000
-```
+.\venv\Scripts\python.exe -m pytest tests/ -v
 
-- Documentación interactiva: http://localhost:8000/docs
-- Health check: http://localhost:8000/
-
-**Usuarios iniciales (seed):**
-
-| Rol | Correo | Contraseña |
-|---|---|---|
-| Administración | `admin@telemedicina.com` | `admin123` |
-| Doctor | `doctor@telemedicina.com` | `doctor123` |
-
-### Frontend (Angular)
-
-```bash
+# Frontend (37 tests, 92.78% cov)
 cd frontend_Telemedicina
-npm install
-ng serve
-```
+npm run test:vitest
+npm run test:e2e          # Cypress E2E
 
-- Aplicación: http://localhost:4200
-- El backend debe estar corriendo en http://localhost:8000 (configurado en `src/environments/environment.ts`)
-
-### Móvil (Flutter Web / PWA)
-
-```bash
+# Mobile (50 tests)
 cd mobile_telemedicina
-flutter pub get
-flutter run -d chrome          # Dev con hot reload
-# Para probar en "móvil": F12 → Ctrl+Shift+M → Pixel 7 / iPhone
-flutter build web              # Build producción (output: build/web/)
-```
+flutter test --coverage
+flutter analyze
 
-**Nota:** Flutter Web **no corre en emulador Android**. Se prueba en Chrome/Edge con **Device Toolbar** (F12 → Ctrl+Shift+M) simulando Pixel 7, iPhone, etc. El backend URL en `api_config.dart` usa `10.0.2.2:8000` para Android/emulador y `192.168.100.30:8000` para device físico/web.
-
-### Pruebas de endpoints (backend)
-
-```bash
-cd backend_Telemedicina
-python scripts/test_endpoints.py
+# OpenSpec (3 repos)
+$env:OPENSPEC_TELEMETRY=0; npx @fission-ai/openspec@latest validate --all --strict
 ```
 
 ---
 
-## Base de datos
+## Solución de Problemas Comunes
 
-Esquema PostgreSQL (Neon) con **42 tablas**, agrupadas por dominio:
-
-| Dominio | Tablas |
-|---|---|
-| Organización y planes | `clinicas`, `planes`, `suscripciones` |
-| Seguridad / RBAC | `roles`, `permisos`, `rol_permisos`, `componentes_sistema` |
-| Usuarios y perfiles | `usuarios`, `pacientes`, `medicos` |
-| Especialidades y servicios | `especialidades`, `medico_especialidad`, `servicios_medicos` |
-| Agenda | `horarios_medicos`, `bloqueos_agenda`, `citas`, `lista_espera`, `historial_citas` |
-| Historia clínica | `historias_clinicas`, `consultas`, `diagnosticos`, `documentos_clinicos` |
-| Comunicaciones | `teleconsultas`, `conversaciones`, `mensajes` |
-| Recetas y laboratorio | `recetas`, `medicamentos`, `receta_detalle`, `ordenes_laboratorio`, `estudios_laboratorio`, `resultados_laboratorio` |
-| Tratamientos e IA | `tratamientos`, `tratamiento_medicamentos`, `seguimiento_tratamiento`, `cuestionarios`, `evaluaciones_triaje`, `asistencias_ia` |
-| Soporte | `notificaciones`, `pagos`, `comprobantes`, `reportes`, `auditoria` |
-
-- La tabla `usuarios` se relaciona con `clinicas` y `roles` (1:1) y es la base del módulo de autenticación actual.
-- Roles iniciales insertados por el script: Administración, Médico, Recepción, Paciente.
+| Problema | Causa | Solución |
+|----------|-------|----------|
+| `404` al crear orden | Paciente no existe en tenant | Verificar `id_paciente` en `pacientes` |
+| `403` al firmar orden ajena | MÉDICO intenta firmar orden de otro | Solo creador puede firmar |
+| `403` RECEPCIÓN en RESULTADO_LAB | Permiso faltante | Por diseño, RECEPCIÓN no tiene `documents:read:lab_results` |
+| PDF no carga en visor | Worker PDF.js faltante | Verificar `pdf.worker.min.mjs` en assets |
+| Cross-tenant 404 | Tenant incorrecto | Header `X-Tenant-ID` o claim `id_clinica` en JWT |
+| Email no llega a Gmail | Spam / App Password incorrecto | Revisar spam, verificar App Password (16 chars sin espacios), `EMAIL_ENABLED=True` |
 
 ---
 
-## CU23 — Recuperar Acceso (pkg: Autenticación y seguridad)
+## Próximos Módulos Pendientes
 
-Caso de uso que cubre dos funcionalidades:
-
-1. **Recuperación de contraseña por correo** mediante código de 6 dígitos.
-2. **Cierre de sesión por inactividad** (auto-logout en el frontend).
-
-### Backend
-
-| Endpoint | Descripción |
-|---|---|
-| `POST /auth/forgot-password` | Recibe `{ correo }`, genera y envía un código de 6 dígitos. Respuesta genérica (no revela correos registrados). |
-| `POST /auth/reset-password` | Recibe `{ correo, codigo, nueva_password }`, valida el código y actualiza la contraseña. |
-
-**Mecanismo del código (sin BD, sin migraciones):**
-- El código se deriva con **HMAC-SHA256** a partir de `id_usuario + ventana de 30 min + secreto` (`JWT_RESET_SECRET_KEY`), por lo que es determinista dentro de su ventana de validez y no requiere almacenamiento.
-- Verificación tolerante: acepta el código del bucket actual o el anterior (resiste cambios de ventana).
-- Comparación en **tiempo constante** (`hmac.compare_digest`).
-- **Anti fuerza bruta:** máx. 5 intentos fallidos por usuario → bloqueo de 15 minutos (en memoria).
-
-**Configuración de correo (`.env` o defaults en `app/core/config.py`):**
-
-| Variable | Default | Descripción |
-|---|---|---|
-| `EMAIL_ENABLED` | `False` | `False` = modo dev, el código se imprime en consola y viaja en `debug_code`. `True` = SMTP real. |
-| `SMTP_HOST` / `SMTP_PORT` | `smtp.gmail.com` / `587` | Servidor SMTP. |
-| `SMTP_USER` / `SMTP_PASSWORD` | vacíos | Credenciales SMTP. |
-| `SMTP_FROM` | `no-reply@telemedicina.com` | Remitente. |
-| `RESET_CODE_TTL_MINUTES` | `30` | Ventana de validez del código. |
-| `RESET_CODE_MAX_ATTEMPTS` | `5` | Intentos fallidos antes del bloqueo. |
-| `RESET_CODE_LOCKOUT_MINUTES` | `15` | Duración del bloqueo. |
-
-> En modo dev (`EMAIL_ENABLED=False`) la respuesta de `forgot-password` incluye `debug_code` con el código generado para facilitar la demo. En producción el código solo llega por correo.
-
-### Frontend (Angular)
-
-| Ruta | Componente | Descripción |
-|---|---|---|
-| `/recuperar` | `features/auth/recover` | Formulario de correo para solicitar el código. |
-| `/recuperar-contrasena` | `features/auth/reset-password` | Correo + código de 6 dígitos + nueva contraseña (con barra de fortaleza y validación de coincidencia). |
-| `/login` | `features/auth/login` | Enlace "¿Olvidaste tu contraseña?" → `/recuperar`; banners de "Sesión expirada" (`?expired=true`) y "Contraseña actualizada" (`?reset=true`). |
-
-**Inactividad** (`core/services/inactivity.service.ts`):
-- Escucha eventos de actividad (`click`, `keydown`, `mousemove`, `scroll`, `touchstart`, `wheel`) y reinicia un temporizador.
-- Timeout configurable en `src/environments/environment.ts` → `inactivityTimeoutMinutes` (default **15 min**).
-- Si el usuario marcó **"Mantener sesión iniciada"** (`rememberMe`), el timeout se duplica (30 min).
-- Al expirar, limpia tokens y redirige a `/login?expired=true`. Solo se ejecuta en navegador (SSR-safe).
-
-### Móvil (Flutter Web)
-
-| Ruta | Pantalla | Descripción |
-|---|---|---|
-| `/forgot-password` | `ForgotPasswordScreen` | Formulario email → "Enviar Código" → navega a ResetPasswordScreen |
-| `/reset-password` | `ResetPasswordScreen` | 6 dígitos (6 TextField con auto-focus) + nueva contraseña + confirmar → "Restablecer" |
-| `/login` | `LoginScreen` | Link "¿Olvidaste tu contraseña?" → `/forgot-password` |
-
-**Validaciones frontend:**
-- Email: `Validators.validateEmail`
-- Código: 6 dígitos numéricos (auto-focus entre campos)
-- Nueva contraseña: `Validators.validatePassword` (mín 6 caracteres)
-- Confirmar: Debe coincidir con nueva
-
-**Seguridad:** Reusa lógica HMAC/anti-fuerza-bruta del backend (mismos endpoints).
-
-### Prueba del flujo (modo dev, BD local)
-
-1. Backend corriendo (`uvicorn app.main:app --reload --port 8000`) y seed aplicado.
-2. `POST /auth/forgot-password` con `{"correo": "admin@telemedicina.com"}` → 200 con `debug_code` (y `[DEV] Código...` en consola).
-3. `POST /auth/reset-password` con `{"correo": "...", "codigo": "<debug_code>", "nueva_password": "NuevaPass123"}` → 200.
-4. `POST /auth/login` con la nueva contraseña → 200.
-5. En el frontend (Angular): `/recuperar` → ingresar correo → tomar el código de la consola → `/recuperar-contrasena` → nueva contraseña → login con `?reset=true`.
-6. En el móvil (Flutter Web): `/forgot-password` → email → "Enviar Código" → `/reset-password` → 6 dígitos + nueva pass → login.
-7. Inactividad: reducir `inactivityTimeoutMinutes` a `0.2` (12 s), iniciar sesión y no tocar nada → redirige a `/login?expired=true`. Restaurar a 15.
-8. Pruebas automatizadas: `python scripts/test_endpoints.py` (incluye casos CU23).
+- [ ] **CU09** — Gestionar Fichas (Pacientes)
+- [ ] **CU11** — Emitir Recetas
+- [ ] **CU21** — Auditoría Administrativa
+- [ ] **Appointments** — Citas Médicas
+- [ ] **AI Assistant** — Asistente IA
 
 ---
 
-## Notas y pendientes
-
-- **Secretos hardcodeados:** las claves JWT y credenciales de BD están como valores por defecto en `app/core/config.py`; deben moverse a variables de entorno (`.env`) en producción.
-- **Desfase de esquema:** el modelo `usuarios` del backend actual no incluye `id_clinica` ni `id_rol` (en el esquema real son obligatorios). Habrá que alinearlo al desarrollar los módulos de organización.
-- **Fallback inexistente:** el frontend intenta un endpoint `/usuarios/me` como respaldo en `auth.service.ts`, pero ese endpoint no existe en el backend.
-- **Estados en mayúsculas:** la BD real usa `'ACTIVO'`/`'PROGRAMADA'`, mientras el backend compara con `'activo'` en minúsculas. Alinear al implementar los estados.
-- **CU23 anti fuerza bruta en memoria:** el bloqueo de 5 intentos fallidos vive en memoria del proceso; se reinicia si el servidor se reinicia. El código en sí (HMAC) no necesita estado.
-- **Flutter Web vs Emulador:** `mobile_telemedicina` es PWA (Flutter Web), no app nativa. Se prueba en Chrome + Device Toolbar, no en emulador Android.
-
----
-
-## Enlaces útiles
-
-- Backend docs (Swagger): http://localhost:8000/docs
-- Angular CLI: https://github.com/angular/angular-cli
-- Flutter Web: https://flutter.dev/web
-- Neon (PostgreSQL): https://neon.tech
+> **Última actualización:** 2026-10-04 — CU10 implementado y verificado en Neon. 180 tests pasando (93 backend + 37 frontend + 50 mobile).

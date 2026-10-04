@@ -23,6 +23,9 @@ python-dotenv>=1.0.0
 pydantic-settings>=2.2.0
 email-validator>=2.0.0
 
+# Almacenamiento S3-compatible (MinIO) para documentos clínicos (CU12)
+boto3>=1.34.0
+
 # Seguridad, JWT & Hashing
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4

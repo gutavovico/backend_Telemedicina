@@ -6,6 +6,7 @@ if not hasattr(bcrypt, "__about__"):
 import hashlib
 import hmac
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 from jose import JWTError, jwt
@@ -27,28 +28,55 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
+def new_jti() -> str:
+    """Generate the unique identifier that identifies a session (CU23).
+
+    El par de tokens emitido en un login comparte el mismo `jti`, de modo que
+    acceso y refresh identifican la MISMA sesion y basta revocar uno para
+    cerrar esa sesion.
+    """
+    return uuid.uuid4().hex
+
+
+def _base_claims(data: Dict[str, Any], token_type: str) -> Dict[str, Any]:
+    """Claims comunes a ambos tokens.
+
+    CU01 exige que el token incorpore `token_version`, y CU23 necesita `jti`
+    para poder revocar una sesion concreta en lugar de cerrar todas las del
+    usuario. Si el token ya trae un `jti` (renovacion), se conserva para que
+    la renovacion no cree una sesion nueva por accidente.
+    """
+    to_encode = data.copy()
+    to_encode.setdefault("jti", new_jti())
+    to_encode.setdefault("token_version", 0)
+    to_encode["type"] = token_type
+    return to_encode
+
+
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
     """Create a short-lived access token."""
-    to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
-    
-    to_encode.update({"exp": expire, "type": "access"})
+
+    to_encode = _base_claims(data, "access")
+    to_encode["exp"] = expire
     encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
     return encoded_jwt
 
 
 def create_refresh_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
     """Create a long-lived refresh token."""
-    to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
-    
-    to_encode.update({"exp": expire, "type": "refresh"})
+
+    # Comparte jti con el access token si la sesion ya existe: la renovacion
+    # debe seguir apuntando a la misma sesion, no crear una nueva.
+    to_encode = _base_claims(data, "refresh")
+    to_encode["exp"] = expire
     encoded_jwt = jwt.encode(to_encode, settings.JWT_REFRESH_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
     return encoded_jwt
 

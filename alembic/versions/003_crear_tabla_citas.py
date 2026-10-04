@@ -1,14 +1,15 @@
 """crear_tabla_citas
 
 Revision ID: 003_crear_tabla_citas
-Revises: e9b1a6ac1592
+Revises: 002b_crear_tablas_base
 Create Date: 2026-08-25 12:00:00.000000
 
-Nota: La base de datos Neon ya registra esta revisión en alembic_version,
-pero el archivo no existía en el repositorio. Se reproduce aquí de forma
-idempotente (CREATE TABLE IF NOT EXISTS) para mantener la cadena de
-revisiones consistente y permitir que las revisiones posteriores
-(004_crear_documentos_clinicos) hereden correctamente.
+Nota: esta migracion se reproduce de forma idempotente (CREATE TABLE IF NOT
+EXISTS). Antes declaraba ``down_revision = 'e9b1a6ac1592'``, una revision que
+existe en la base de datos de Neon pero nunca estuvo en el repositorio, lo que
+rompia la cadena (``alembic history`` fallaba con KeyError). Ahora encadena
+desde 002b_crear_tablas_base, que crea las tablas ``pacientes``, ``medicos`` y
+``especialidades`` que esta migracion referencia.
 """
 from typing import Sequence, Union
 
@@ -18,7 +19,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '003_crear_tabla_citas'
-down_revision: Union[str, Sequence[str], None] = 'e9b1a6ac1592'
+down_revision: Union[str, Sequence[str], None] = '002b_crear_tablas_base'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
