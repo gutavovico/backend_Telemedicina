@@ -49,14 +49,16 @@ def list_clinicas(
             .order_by(Usuario.id_usuario.asc())
             .first()
         )
-        # Fallback: primer admin (ADMIN/ADMINISTRACION) si no hay "ADMINISTRADOR".
+        # Fallback: primer admin (ADMIN/ADMINISTRACION y variantes) si no hay "ADMINISTRADOR".
         if not admin:
             admin = (
                 db.query(Usuario)
                 .join(Rol, Usuario.id_rol == Rol.id_rol)
                 .filter(
                     Usuario.id_clinica == c.id_clinica,
-                    func.upper(Rol.nombre).in_(["ADMIN", "ADMINISTRACION"]),
+                    func.upper(Rol.nombre).in_(
+                        ["ADMIN", "ADMINISTRACION", "ADMINISTRACIÓN", "ADMINISTRADOR DEL SISTEMA"]
+                    ),
                 )
                 .order_by(Usuario.id_usuario.asc())
                 .first()
