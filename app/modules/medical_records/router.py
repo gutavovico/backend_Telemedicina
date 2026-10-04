@@ -26,3 +26,7 @@ router.include_router(pacientes_doc_router)
 # CU16: Recetas Médicas Digitales
 router.include_router(prescriptions_router)
 router.include_router(medicamentos_router)
+
+from app.modules.medical_records.triage.router import router as triage_router
+router.include_router(triage_router)
+
