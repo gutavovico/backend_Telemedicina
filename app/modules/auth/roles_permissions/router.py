@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.modules.auth.dependencies import get_current_tenant_id, require_admin
+from app.modules.auth.dependencies import get_current_tenant_id, get_current_user, require_admin
 from app.modules.auth.models import Usuario
 from app.modules.auth.roles_permissions.schemas import (
     PermissionResponse,
@@ -47,9 +47,13 @@ def get_roles(
 def get_role(
     id_rol: int,
     db: Session = Depends(get_db),
-    admin_user: Usuario = Depends(require_admin),
+    current_user: Usuario = Depends(get_current_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
+    # Admin o lectura del rol propio (p. ej. recepción resolviendo su rol
+    # para CU05 sin acceso al catálogo completo, que sigue solo-admin).
+    if id_rol != current_user.id_rol:
+        require_admin(current_user)
     return get_role_detail(db, id_rol, tenant_id=tenant_id)
 
 

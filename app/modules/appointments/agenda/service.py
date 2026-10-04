@@ -7,7 +7,7 @@ from datetime import date, datetime, time, timedelta, timezone
 import unicodedata
 
 from fastapi import HTTPException
-from sqlalchemy import BigInteger, Date, Time, column, func, inspect, select, table
+from sqlalchemy import BigInteger, Date, String, column, func, inspect, select, table
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -216,7 +216,7 @@ def _citas(db, id_medico, fecha, tenant_id):
         return [], ["No se pudo verificar citas: la tabla o sus columnas requeridas no están disponibles"]
     citas = table("citas", column("id_cita", BigInteger), column("id_paciente", BigInteger),
                   column("id_medico", BigInteger), column("fecha_cita", Date),
-                  column("hora_inicio", Time), column("hora_fin", Time))
+                  column("hora_inicio", String(10)), column("hora_fin", String(10)))
     consulta = select(citas.c.id_cita, citas.c.id_paciente, citas.c.hora_inicio, citas.c.hora_fin).select_from(
         citas.join(Medico.__table__, citas.c.id_medico == Medico.id_medico).join(
             Usuario.__table__, Medico.id_usuario == Usuario.id_usuario)
@@ -224,8 +224,29 @@ def _citas(db, id_medico, fecha, tenant_id):
     return db.execute(consulta).mappings().all(), []
 
 
+def _a_hora(valor):
+    """Normaliza hora `time`, texto 'HH:MM[:SS]' o None a `time | None`.
+
+    La tabla `citas` guarda VARCHAR(10); el resto del módulo usa `time`.
+    Un valor ilegible se trata como None (periodo no verificable).
+    """
+    if valor is None or isinstance(valor, time):
+        return valor
+    texto = str(valor).strip()
+    for formato in ("%H:%M:%S", "%H:%M"):
+        try:
+            return datetime.strptime(texto, formato).time()
+        except ValueError:
+            continue
+    return None
+
+
 def _intersecta(inicio, fin, otro_inicio, otro_fin):
     # Horas incompletas: no declarar libre un periodo que no podemos verificar.
+    inicio, fin = _a_hora(inicio), _a_hora(fin)
+    otro_inicio, otro_fin = _a_hora(otro_inicio), _a_hora(otro_fin)
+    if inicio is None or fin is None:
+        return True
     return otro_inicio is None or otro_fin is None or inicio < otro_fin and fin > otro_inicio
 
 

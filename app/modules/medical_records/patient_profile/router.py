@@ -131,9 +131,30 @@ def patch_my_patient_profile(
 def get_patient_detail(
     id_paciente: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles(["ADMIN", "RECEPCION", "MEDICO"])),
+    current_user: Usuario = Depends(get_current_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
+    # Paciente: solo su propio registro (CU28 criterio 8); staff: ADMIN/RECEPCION/MEDICO.
+    rol = (current_user.rol.nombre.strip().upper() if current_user.rol and current_user.rol.nombre else "")
+    if rol == "PACIENTE":
+        propio = service.get_patient_by_user_id(db, current_user.id_usuario, tenant_id=tenant_id)
+        if not propio or propio.id_paciente != id_paciente:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tienes acceso al expediente de otro paciente",
+            )
+    elif rol not in ("ADMIN", "ADMINISTRADOR", "ADMINISTRACION", "RECEPCION", "MEDICO", "SUPERADMINISTRADOR") and not (
+        "SUPER" in rol
+    ):
+        # Sin rol staff reconocido: sin acceso (fail-closed). Superadmin global
+        # pasa por su bypass habitual vía _is_global_super_admin.
+        from app.modules.auth.dependencies import _is_global_super_admin
+
+        if not _is_global_super_admin(current_user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Permiso denegado para ver expedientes de pacientes",
+            )
     paciente = service.get_patient_by_id(db, id_paciente, tenant_id=tenant_id)
     if not paciente:
         raise HTTPException(
