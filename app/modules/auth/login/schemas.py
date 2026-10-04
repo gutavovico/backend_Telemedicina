@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class UsuarioCreate(BaseModel):
@@ -22,6 +22,9 @@ class UsuarioResponse(BaseModel):
     id_clinica: Optional[int] = None
     tenant_id: Optional[str] = None
     id_rol: Optional[int] = None
+    # Nombre real de la relación Usuario.rol (contrato oficial CU16).
+    # Se mantiene id_rol por compatibilidad; el frontend SHALL usar `rol`.
+    rol: Optional[str] = None
     nombres: str
     apellidos: str
     correo: str
@@ -34,6 +37,15 @@ class UsuarioResponse(BaseModel):
     fecha_creacion: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("rol", mode="before")
+    @classmethod
+    def _normalizar_rol(cls, v):
+        # from_attributes entrega el objeto Rol; el contrato exige su nombre.
+        if v is None or isinstance(v, str):
+            return v
+        nombre = getattr(v, "nombre", None)
+        return nombre if isinstance(nombre, str) else None
 
 
 class LoginRequest(BaseModel):

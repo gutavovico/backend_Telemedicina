@@ -1,5 +1,6 @@
 from typing import List, Optional, Tuple
 from fastapi import HTTPException, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 from app.modules.auth.models import Usuario
 from app.modules.appointments.models import Especialidad, Medico, MedicoEspecialidad
@@ -12,6 +13,16 @@ from app.modules.appointments.doctor_profile.schemas import (
 )
 
 ESTADOS_VALIDOS = ("activo", "inactivo")
+
+
+def _medico_en_tenant(tenant_id: int):
+    """Incluye perfiles heredados sin id_clinica solo durante la transición.
+
+    El join con ``Usuario.id_clinica`` siempre acompaña este criterio; por lo
+    tanto un perfil heredado no puede cruzar clínicas. La migración CU04 llena
+    la columna y los perfiles nuevos se crean siempre con id_clinica.
+    """
+    return or_(Medico.id_clinica == tenant_id, Medico.id_clinica.is_(None))
 
 
 def _get_especialidades_por_ids(db: Session, ids: List[int]) -> List[Especialidad]:
@@ -44,6 +55,8 @@ def _cargar_relaciones(query):
 
 
 def crear_medico(db: Session, medico_data: MedicoCreate, current_tenant_id: Optional[int] = None) -> Medico:
+    if current_tenant_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Se requiere una clínica asociada")
     usuario = db.query(Usuario).filter(Usuario.id_usuario == medico_data.id_usuario).first()
     if not usuario:
         raise HTTPException(
@@ -55,7 +68,7 @@ def crear_medico(db: Session, medico_data: MedicoCreate, current_tenant_id: Opti
             status_code=status.HTTP_404_NOT_FOUND,
             detail="El usuario no pertenece a la clínica actual",
         )
-    if usuario.estado != "activo":
+    if usuario.estado.lower() != "activo":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="El usuario está inactivo o suspendido; no puede tener perfil médico",
@@ -70,7 +83,10 @@ def crear_medico(db: Session, medico_data: MedicoCreate, current_tenant_id: Opti
 
     matricula_duplicada = (
         db.query(Medico)
-        .filter(Medico.matricula_profesional == medico_data.matricula_profesional)
+        .filter(
+            Medico.id_clinica == current_tenant_id,
+            Medico.matricula_profesional == medico_data.matricula_profesional,
+        )
         .first()
     )
     if matricula_duplicada:
@@ -85,6 +101,7 @@ def crear_medico(db: Session, medico_data: MedicoCreate, current_tenant_id: Opti
 
     nuevo_medico = Medico(
         id_usuario=medico_data.id_usuario,
+        id_clinica=current_tenant_id,
         matricula_profesional=medico_data.matricula_profesional,
         descripcion_profesional=medico_data.descripcion_profesional,
         experiencia=medico_data.experiencia,
@@ -118,7 +135,10 @@ def listar_medicos(
     query = db.query(Medico)
 
     if current_tenant_id is not None:
-        query = query.join(Usuario).filter(Usuario.id_clinica == current_tenant_id)
+        query = query.join(Usuario).filter(
+            _medico_en_tenant(current_tenant_id),
+            Usuario.id_clinica == current_tenant_id,
+        )
 
     if estado is not None:
         query = query.filter(Medico.estado == estado)
@@ -154,7 +174,10 @@ def listar_medicos(
 def obtener_medico(db: Session, id_medico: int, current_tenant_id: Optional[int] = None) -> Medico:
     query = _cargar_relaciones(db.query(Medico)).filter(Medico.id_medico == id_medico)
     if current_tenant_id is not None:
-        query = query.join(Usuario).filter(Usuario.id_clinica == current_tenant_id)
+        query = query.join(Usuario).filter(
+            _medico_en_tenant(current_tenant_id),
+            Usuario.id_clinica == current_tenant_id,
+        )
     medico = query.first()
     if not medico:
         raise HTTPException(
@@ -167,7 +190,10 @@ def obtener_medico(db: Session, id_medico: int, current_tenant_id: Optional[int]
 def obtener_medico_por_usuario(db: Session, id_usuario: int, current_tenant_id: Optional[int] = None) -> Medico:
     query = _cargar_relaciones(db.query(Medico)).filter(Medico.id_usuario == id_usuario)
     if current_tenant_id is not None:
-        query = query.join(Usuario).filter(Usuario.id_clinica == current_tenant_id)
+        query = query.join(Usuario).filter(
+            _medico_en_tenant(current_tenant_id),
+            Usuario.id_clinica == current_tenant_id,
+        )
     medico = query.first()
     if not medico:
         raise HTTPException(
@@ -184,6 +210,7 @@ def actualizar_medico(db: Session, id_medico: int, datos: MedicoUpdate, current_
         duplicada = (
             db.query(Medico)
             .filter(
+                Medico.id_clinica == current_tenant_id,
                 Medico.matricula_profesional == datos.matricula_profesional,
                 Medico.id_medico != id_medico,
             )

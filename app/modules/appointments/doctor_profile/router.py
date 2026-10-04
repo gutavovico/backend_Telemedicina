@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.modules.auth.dependencies import get_current_tenant_id, get_current_user, require_admin
+from app.modules.auth.dependencies import get_current_user, get_required_tenant_id, require_admin
 from app.modules.auth.models import Usuario
 from app.modules.appointments.doctor_profile import service
 from app.modules.appointments.doctor_profile.schemas import (
@@ -31,7 +31,7 @@ def crear_medico(
     datos: MedicoCreate,
     db: Session = Depends(get_db),
     admin_user: Usuario = Depends(require_admin),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant_id: int = Depends(get_required_tenant_id),
 ):
     return service.crear_medico(db, datos, current_tenant_id=tenant_id)
 
@@ -44,7 +44,7 @@ def crear_medico(
 def obtener_mi_perfil(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant_id: int = Depends(get_required_tenant_id),
 ):
     return service.obtener_medico_por_usuario(db, current_user.id_usuario, current_tenant_id=tenant_id)
 
@@ -62,7 +62,7 @@ def listar_medicos(
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant_id: int = Depends(get_required_tenant_id),
 ):
     total, items = service.listar_medicos(
         db,
@@ -85,7 +85,7 @@ def obtener_medico(
     id_medico: int,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant_id: int = Depends(get_required_tenant_id),
 ):
     return service.obtener_medico(db, id_medico, current_tenant_id=tenant_id)
 
@@ -100,7 +100,7 @@ def actualizar_medico(
     datos: MedicoUpdate,
     db: Session = Depends(get_db),
     admin_user: Usuario = Depends(require_admin),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant_id: int = Depends(get_required_tenant_id),
 ):
     return service.actualizar_medico(db, id_medico, datos, current_tenant_id=tenant_id)
 
@@ -115,7 +115,7 @@ def cambiar_estado(
     datos: EstadoUpdate,
     db: Session = Depends(get_db),
     admin_user: Usuario = Depends(require_admin),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant_id: int = Depends(get_required_tenant_id),
 ):
     return service.cambiar_estado_medico(db, id_medico, datos.nuevo_estado, current_tenant_id=tenant_id)
 
@@ -130,7 +130,7 @@ def asignar_especialidad(
     datos: AsignacionEspecialidad,
     db: Session = Depends(get_db),
     admin_user: Usuario = Depends(require_admin),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant_id: int = Depends(get_required_tenant_id),
 ):
     return service.asignar_especialidad(db, id_medico, datos, current_tenant_id=tenant_id)
 
@@ -145,7 +145,7 @@ def quitar_especialidad(
     id_especialidad: int,
     db: Session = Depends(get_db),
     admin_user: Usuario = Depends(require_admin),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant_id: int = Depends(get_required_tenant_id),
 ):
     return service.quitar_especialidad(db, id_medico, id_especialidad, current_tenant_id=tenant_id)
 

@@ -37,7 +37,34 @@ class Settings(BaseSettings):
     SMTP_FROM: str = "no-reply@telemedicina.com"
 
     # CORS
-    CORS_ORIGINS: str = "http://localhost:4200"
+    CORS_ORIGINS: str = "http://localhost:4200,https://frontend-telemedicina-weld.vercel.app"
+
+    # Almacenamiento de documentos (CU12)
+    STORAGE_BACKEND: str = "local"  # local | minio
+    STORAGE_LOCAL_DIR: str = "storage_documents"
+    STORAGE_PUBLIC_BASE_URL: str = "http://localhost:8000"
+    # MinIO (S3-compatible)
+    MINIO_ENDPOINT: str = "localhost:9000"
+    MINIO_ACCESS_KEY: str = ""
+    MINIO_SECRET_KEY: str = ""
+    MINIO_BUCKET: str = "telemedicina-documentos"
+    MINIO_SECURE: bool = False
+    # Expiración de URL firmada en segundos (máximo 900)
+    DOCUMENTO_URL_EXPIRACION: int = 900
+
+    # Recetas médicas digitales CU16 (firma Ed25519 + canonicalización RFC 8785/JCS + QR).
+    # Las claves privadas nunca se almacenan en la base ni en el repositorio.
+    # Ver specs/openspec/contracts/prescriptions.md §5.
+    PRESCRIPTION_SIGNING_PRIVATE_KEY_BASE64: str = ""
+    PRESCRIPTION_SIGNING_KEY_ID: str = "prescriptions-2026-01"
+    PRESCRIPTION_VERIFICATION_KEYS_JSON: str = "{}"
+    PRESCRIPTION_TELEMETRY_HMAC_KEY: str = ""
+    PRESCRIPTION_PUBLIC_BASE_URL: str = "http://localhost:8000"
+    PRESCRIPTION_DEFAULT_VALIDITY_DAYS: int = 90
+    # Proxies de confianza para resolver IP real tras X-Forwarded-For.
+    # Vacía por defecto: no se confía en ningún proxy y se ignora el encabezado.
+    # Ejemplo: "10.0.0.1, 192.168.1.10". Ver CU16 decisión 5.
+    TRUSTED_PROXY_IPS: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -56,7 +56,7 @@ class CU05MedicalAgendaTestCase(unittest.TestCase):
                 notificaciones_sms BOOLEAN DEFAULT 0, fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""",
             """CREATE TABLE medicos (id_medico INTEGER PRIMARY KEY, id_usuario INTEGER UNIQUE,
-                matricula_profesional TEXT UNIQUE, descripcion_profesional TEXT, experiencia TEXT,
+                id_clinica INTEGER, matricula_profesional TEXT UNIQUE, descripcion_profesional TEXT, experiencia TEXT,
                 foto_perfil TEXT, estado TEXT, fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""",
             "CREATE TABLE especialidades (id_especialidad INTEGER PRIMARY KEY, nombre TEXT, descripcion TEXT, estado TEXT)",
             "CREATE TABLE medico_especialidad (id_medico INTEGER, id_especialidad INTEGER, es_principal BOOLEAN)",
@@ -86,7 +86,7 @@ class CU05MedicalAgendaTestCase(unittest.TestCase):
                 conn.exec_driver_sql(statement)
 
     def setUp(self):
-        self.clock = patch("app.modules.appointments.medical_agenda.service.hoy_agenda", return_value=date(2026, 9, 9))
+        self.clock = patch("app.modules.appointments.agenda.service.hoy_agenda", return_value=date(2026, 9, 9))
         self.clock.start()
         with self.engine.begin() as conn:
             for name in ("notificaciones", "auditoria", "citas", "pacientes", "bloqueos_agenda", "horarios_medicos",
@@ -99,8 +99,8 @@ class CU05MedicalAgendaTestCase(unittest.TestCase):
                 conn.execute(text("""INSERT INTO usuarios (id_usuario,id_clinica,id_rol,nombres,apellidos,correo,password_hash,estado)
                     VALUES (:id,:clinic,:role,'Nombre','Apellido',:email,'hash','activo')"""),
                     {"id":uid,"clinic":clinic,"role":role,"email":f"u{uid}@test.local"})
-            conn.exec_driver_sql("""INSERT INTO medicos (id_medico,id_usuario,matricula_profesional,estado)
-                VALUES (20,2,'M20','activo'), (50,5,'M50','activo'), (60,6,'M60','activo')""")
+            conn.exec_driver_sql("""INSERT INTO medicos (id_medico,id_usuario,id_clinica,matricula_profesional,estado)
+                VALUES (20,2,1,'M20','activo'), (50,5,2,'M50','activo'), (60,6,1,'M60','activo')""")
             conn.exec_driver_sql("""INSERT INTO servicios_medicos VALUES
                 (1,'Consulta general',NULL,'08:00:00','13:00:00',30,100,'activo'),
                 (2,'Consulta especializada',NULL,'13:00:00','16:00:00',45,150,'activo'),
@@ -308,7 +308,7 @@ class CU05MedicalAgendaTestCase(unittest.TestCase):
         self._insert_citas()
         bid = self._bloqueo().json()["id_bloqueo"]
         self._as(1)
-        with patch("app.modules.appointments.medical_agenda.service._auditar", side_effect=RuntimeError("fallo")):
+        with patch("app.modules.appointments.agenda.service._auditar", side_effect=RuntimeError("fallo")):
             with self.assertRaises(RuntimeError):
                 self._accion(bid,"aprobar")
         with self.engine.connect() as conn:
