@@ -84,6 +84,10 @@ def seed_all():
             c1 = Clinica(
                 id_clinica=1,
                 nombre="Clínica Central San Juan de Dios",
+                razon_social="Clínica Central San Juan de Dios S.R.L.",
+                nit="1020304050",
+                telefono="+591 33450001",
+                correo="contacto@clinicacentral.com",
                 direccion="Av. Cañoto esq. México #450, Santa Cruz",
                 estado="ACTIVO",
             )
@@ -91,6 +95,14 @@ def seed_all():
             print("  [+] Creada Clínica Central (id_clinica=1)")
         else:
             c1.nombre = "Clínica Central San Juan de Dios"
+            if not c1.razon_social:
+                c1.razon_social = "Clínica Central San Juan de Dios S.R.L."
+            if not c1.nit:
+                c1.nit = "1020304050"
+            if not c1.telefono:
+                c1.telefono = "+591 33450001"
+            if not c1.correo:
+                c1.correo = "contacto@clinicacentral.com"
             c1.direccion = "Av. Cañoto esq. México #450, Santa Cruz"
             c1.estado = "ACTIVO"
             print("  [=] Clínica Central actualizada")
@@ -100,6 +112,10 @@ def seed_all():
             c2 = Clinica(
                 id_clinica=2,
                 nombre="Red Médica del Norte",
+                razon_social="Red Médica del Norte S.R.L.",
+                nit="1020304060",
+                telefono="+591 33450002",
+                correo="contacto@redmedicanorte.com",
                 direccion="Av. Banzer Km 5.5 #120, Santa Cruz",
                 estado="ACTIVO",
             )
@@ -107,6 +123,15 @@ def seed_all():
             print("  [+] Creada Clínica Norte (id_clinica=2)")
         else:
             c2.nombre = "Red Médica del Norte"
+            if not c2.razon_social:
+                c2.razon_social = "Red Médica del Norte S.R.L."
+            if not c2.nit:
+                c2.nit = "1020304060"
+            if not c2.telefono:
+                c2.telefono = "+591 33450002"
+            if not c2.correo:
+                c2.correo = "contacto@redmedicanorte.com"
+            c2.direccion = "Av. Banzer Km 5.5 #120, Santa Cruz"
             c2.estado = "ACTIVO"
             print("  [=] Clínica Norte verificada")
 
@@ -247,6 +272,15 @@ def seed_all():
                 "id_rol": 2,
                 "id_clinica": 1,
                 "telefono": "+591 71111111",
+            },
+            {
+                "correo": "admin.norte@telemedicina.com",
+                "password": "admin123",
+                "nombres": "Administrador",
+                "apellidos": "Norte",
+                "id_rol": 1,
+                "id_clinica": 2,
+                "telefono": "+591 70000002",
             },
             {
                 "correo": "medico.norte@telemedicina.com",
