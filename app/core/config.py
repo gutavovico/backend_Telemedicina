@@ -1,4 +1,6 @@
 from typing import List
+from pathlib import Path
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -61,7 +63,42 @@ class Settings(BaseSettings):
     SMTP_FROM: str = "admin.telemedicina@gmail.com"
 
     # CORS
-    CORS_ORIGINS: str = "http://localhost:4200"
+    CORS_ORIGINS: str = "http://localhost:4200,https://frontend-telemedicina-weld.vercel.app"
+
+    # Almacenamiento de documentos (CU12)
+    STORAGE_BACKEND: str = "local"  # local | minio
+    STORAGE_LOCAL_DIR: str = "storage_documents"
+    STORAGE_PUBLIC_BASE_URL: str = "http://localhost:8000"
+    # MinIO (S3-compatible)
+    MINIO_ENDPOINT: str = "localhost:9000"
+    MINIO_ACCESS_KEY: str = ""
+    MINIO_SECRET_KEY: str = ""
+    MINIO_BUCKET: str = "telemedicina-documentos"
+    MINIO_SECURE: bool = False
+    # Expiración de URL firmada en segundos (máximo 900)
+    DOCUMENTO_URL_EXPIRACION: int = 900
+
+    # Recetas médicas digitales CU16 (firma Ed25519 + canonicalización RFC 8785/JCS + QR).
+    # Las claves privadas nunca se almacenan en la base ni en el repositorio.
+    # Ver specs/openspec/contracts/prescriptions.md §5.
+    PRESCRIPTION_SIGNING_PRIVATE_KEY_BASE64: str = ""
+    PRESCRIPTION_SIGNING_KEY_ID: str = "prescriptions-2026-01"
+    PRESCRIPTION_VERIFICATION_KEYS_JSON: str = "{}"
+    PRESCRIPTION_TELEMETRY_HMAC_KEY: str = ""
+    PRESCRIPTION_PUBLIC_BASE_URL: str = "http://localhost:8000"
+    PRESCRIPTION_DEFAULT_VALIDITY_DAYS: int = 90
+    # Proxies de confianza para resolver IP real tras X-Forwarded-For.
+    # Vacía por defecto: no se confía en ningún proxy y se ignora el encabezado.
+    # Ejemplo: "10.0.0.1, 192.168.1.10". Ver CU16 decisión 5.
+    TRUSTED_PROXY_IPS: str = ""
+
+    # CU22: interpretación de texto con Groq (nunca se envía al cliente).
+    GROQ_API_KEY: SecretStr = SecretStr("")
+    GROQ_MODEL: str = "openai/gpt-oss-20b"
+    GROQ_TIMEOUT_SECONDS: float = 10.0
+    GROQ_MAX_OUTPUT_TOKENS: int = 1000
+    GROQ_TRANSCRIPTION_MODEL: str = "whisper-large-v3"
+    GROQ_TRANSCRIPTION_TIMEOUT_SECONDS: float = 30.0
 
     # Almacenamiento de documentos (CU12)
     STORAGE_BACKEND: str = "local"  # local | minio
@@ -77,14 +114,14 @@ class Settings(BaseSettings):
     DOCUMENTO_URL_EXPIRACION: int = 900
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=Path(__file__).resolve().parents[2] / ".env",
         env_file_encoding="utf-8",
         extra="ignore"
     )
 
     @property
     def DATABASE_URL(self) -> str:
-        return f"postgresql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 
     @property
     def cors_origins_list(self) -> List[str]:

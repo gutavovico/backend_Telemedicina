@@ -30,12 +30,14 @@ htmlcov/
 # Bases de datos locales y migraciones temporales
 *.sqlite3
 *.db
+my_specs/
 
 # Logs y temporales
 *.log
 logs/
 tmp/
 temp/
+storage_documents/
 
 # Archivos del Sistema Operativo
 .DS_Store

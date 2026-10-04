@@ -1,0 +1,1 @@
+# Logout module (CU24)

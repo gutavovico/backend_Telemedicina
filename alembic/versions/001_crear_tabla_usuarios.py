@@ -22,8 +22,8 @@ def upgrade() -> None:
     op.create_table(
         'usuarios',
         sa.Column('id_usuario', sa.BigInteger(), autoincrement=True, nullable=False),
-        # sa.Column('id_clinica', sa.BigInteger(), nullable=True),  # Pendiente
-        # sa.Column('id_rol', sa.BigInteger(), nullable=True),      # Pendiente
+        sa.Column('id_clinica', sa.BigInteger(), nullable=True),
+        sa.Column('id_rol', sa.BigInteger(), nullable=True),
         sa.Column('nombres', sa.String(length=100), nullable=False),
         sa.Column('apellidos', sa.String(length=100), nullable=False),
         sa.Column('correo', sa.String(length=150), nullable=False),
@@ -40,9 +40,13 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_usuarios_correo'), 'usuarios', ['correo'], unique=True)
     op.create_index(op.f('ix_usuarios_id_usuario'), 'usuarios', ['id_usuario'], unique=False)
+    op.create_index(op.f('ix_usuarios_id_clinica'), 'usuarios', ['id_clinica'], unique=False)
+    op.create_index(op.f('ix_usuarios_id_rol'), 'usuarios', ['id_rol'], unique=False)
 
 
 def downgrade() -> None:
+    op.drop_index(op.f('ix_usuarios_id_rol'), table_name='usuarios')
+    op.drop_index(op.f('ix_usuarios_id_clinica'), table_name='usuarios')
     op.drop_index(op.f('ix_usuarios_id_usuario'), table_name='usuarios')
     op.drop_index(op.f('ix_usuarios_correo'), table_name='usuarios')
     op.drop_table('usuarios')

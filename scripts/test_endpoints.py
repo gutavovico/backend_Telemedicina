@@ -118,7 +118,7 @@ def run_tests():
     res = client.post("/auth/forgot-password", json={"correo": "no_existe@telemedicina.com"})
     print(f"   POST /auth/forgot-password (inexistente) -> Status: {res.status_code}, Response: {res.json()}")
     assert res.status_code == 200
-    assert "debug_code" not in res.json()
+    assert not res.json().get("debug_code")
 
     # Reset con código correcto
     nueva_password = "NuevaPasswordCU23!"
