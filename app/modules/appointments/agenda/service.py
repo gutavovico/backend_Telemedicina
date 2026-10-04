@@ -1,13 +1,14 @@
 """Reglas CU05 sobre sesiones síncronas y tablas existentes.
 
-Las citas se consultan sin filtrar estados: su catálogo aún no está definido.
+Las citas CANCELADA no ocupan intervalos ni reciben avisos de reprogramación.
+Los demás estados siguen sujetos a verificación de su intervalo.
 No se registran modelos ni se ejecuta DDL para citas. Los intervalos son [inicio, fin).
 """
 from datetime import date, datetime, time, timedelta, timezone
 import unicodedata
 
 from fastapi import HTTPException
-from sqlalchemy import BigInteger, Date, Time, column, func, inspect, select, table
+from sqlalchemy import BigInteger, Date, column, func, inspect, select, table
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -209,19 +210,41 @@ def crear_bloqueo(db: Session, datos: BloqueoCreate, user, tenant_id):
 
 def _citas(db, id_medico, fecha, tenant_id):
     inspector = inspect(db.connection())
-    necesarios = {"id_cita", "id_paciente", "id_medico", "fecha_cita", "hora_inicio", "hora_fin"}
-    if not inspector.has_table("citas") or not necesarios.issubset(
-        {c["name"] for c in inspector.get_columns("citas")}
-    ):
+    necesarios = {"id_cita", "id_paciente", "id_medico", "fecha_cita", "hora_inicio", "hora_fin", "estado"}
+    columnas = {c["name"]: c["type"] for c in inspector.get_columns("citas")} if inspector.has_table("citas") else {}
+    if not necesarios.issubset(columnas):
         return [], ["No se pudo verificar citas: la tabla o sus columnas requeridas no están disponibles"]
     citas = table("citas", column("id_cita", BigInteger), column("id_paciente", BigInteger),
                   column("id_medico", BigInteger), column("fecha_cita", Date),
-                  column("hora_inicio", Time), column("hora_fin", Time))
-    consulta = select(citas.c.id_cita, citas.c.id_paciente, citas.c.hora_inicio, citas.c.hora_fin).select_from(
+                  column("hora_inicio", columnas["hora_inicio"]), column("hora_fin", columnas["hora_fin"]),
+                  column("estado", columnas["estado"]))
+    consulta = select(citas.c.id_cita, citas.c.id_paciente, citas.c.hora_inicio, citas.c.hora_fin,
+                      citas.c.estado).select_from(
         citas.join(Medico.__table__, citas.c.id_medico == Medico.id_medico).join(
             Usuario.__table__, Medico.id_usuario == Usuario.id_usuario)
     ).where(citas.c.id_medico == id_medico, citas.c.fecha_cita == fecha, Usuario.id_clinica == tenant_id)
-    return db.execute(consulta).mappings().all(), []
+    resultado, advertencias = [], []
+    for fila in db.execute(consulta).mappings():
+        cita = dict(fila)
+        if str(cita["estado"] or "").strip().upper() == "CANCELADA":
+            continue
+        inicio, fin = (_hora_cita(cita[campo]) for campo in ("hora_inicio", "hora_fin"))
+        if inicio is None or fin is None or inicio >= fin:
+            inicio = fin = None
+            motivo = "falta hora_fin" if cita["hora_fin"] is None else "intervalo horario inválido"
+            advertencias.append(f"Cita {cita['id_cita']}: {motivo}; no se puede confirmar disponibilidad libre")
+        cita.update(hora_inicio=inicio, hora_fin=fin)
+        resultado.append(cita)
+    return resultado, advertencias
+
+
+def _hora_cita(valor):
+    """Compatibilidad de lectura TIME/varchar sin cambiar el esquema heredado."""
+    try:
+        hora = time.fromisoformat(valor.strip()) if isinstance(valor, str) else valor
+    except ValueError:
+        return None
+    return hora if isinstance(hora, time) and hora.tzinfo is None else None
 
 
 def _intersecta(inicio, fin, otro_inicio, otro_fin):

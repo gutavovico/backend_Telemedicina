@@ -1,4 +1,6 @@
 from typing import List
+from pathlib import Path
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -66,15 +68,23 @@ class Settings(BaseSettings):
     # Ejemplo: "10.0.0.1, 192.168.1.10". Ver CU16 decisión 5.
     TRUSTED_PROXY_IPS: str = ""
 
+    # CU22: interpretación de texto con Groq (nunca se envía al cliente).
+    GROQ_API_KEY: SecretStr = SecretStr("")
+    GROQ_MODEL: str = "openai/gpt-oss-20b"
+    GROQ_TIMEOUT_SECONDS: float = 10.0
+    GROQ_MAX_OUTPUT_TOKENS: int = 1000
+    GROQ_TRANSCRIPTION_MODEL: str = "whisper-large-v3"
+    GROQ_TRANSCRIPTION_TIMEOUT_SECONDS: float = 30.0
+
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=Path(__file__).resolve().parents[2] / ".env",
         env_file_encoding="utf-8",
         extra="ignore"
     )
 
     @property
     def DATABASE_URL(self) -> str:
-        return f"postgresql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 
     @property
     def cors_origins_list(self) -> List[str]:

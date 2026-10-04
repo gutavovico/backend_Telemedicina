@@ -277,6 +277,34 @@ class CU05MedicalAgendaTestCase(unittest.TestCase):
         self._horario()
         self.assertEqual(sum(s["disponible"] for s in self._slots()["slots"]),6)
 
+    def test_cita_cancelada_no_ocupa_ni_recibe_aviso(self):
+        self._horario()
+        with self.engine.begin() as conn:
+            conn.exec_driver_sql("""INSERT INTO citas
+                (id_cita,id_paciente,id_medico,fecha_cita,hora_inicio,hora_fin,estado)
+                VALUES (1,40,20,'2026-09-10','10:00:00',NULL,'CANCELADA')""")
+        data = self._slots()
+        self.assertTrue(data["citas_verificadas"])
+        self.assertEqual(data["advertencias"], [])
+        self.assertEqual(sum(s["disponible"] for s in data["slots"]), 10)
+        bid = self._bloqueo().json()["id_bloqueo"]
+        self._as(1)
+        approved = self._accion(bid, "aprobar")
+        self.assertEqual(approved.status_code, 200, approved.text)
+        self.assertEqual(approved.json()["citas_afectadas"], [])
+        self.assertEqual(approved.json()["notificaciones_creadas"], 0)
+
+    def test_cita_activa_sin_hora_fin_cierra_disponibilidad_con_aviso(self):
+        self._horario()
+        with self.engine.begin() as conn:
+            conn.exec_driver_sql("""INSERT INTO citas
+                (id_cita,id_paciente,id_medico,fecha_cita,hora_inicio,hora_fin,estado)
+                VALUES (1,40,20,'2026-09-10','10:00:00',NULL,'CONFIRMADA')""")
+        data = self._slots()
+        self.assertFalse(data["citas_verificadas"])
+        self.assertFalse(any(s["disponible"] for s in data["slots"]))
+        self.assertTrue(any("hora_fin" in aviso and "1" in aviso for aviso in data["advertencias"]))
+
     def test_receptor_ausente_o_ajeno_no_se_inventa(self):
         self._insert_citas()
         with self.engine.begin() as conn:
@@ -336,6 +364,37 @@ class CU05MedicalAgendaTestCase(unittest.TestCase):
         self.assertEqual(sum(len([m for m in methods if m in ("get","post","patch","delete","put")])
                              for methods in agenda.values()),10)
         self.assertEqual(self.client.get("/appointments/especialidades").status_code,200)
+
+
+class CU05TextHoursTestCase(CU05MedicalAgendaTestCase):
+    """Ejecuta el mismo contrato con el tipo varchar observado en Neon."""
+
+    @classmethod
+    def _create_schema(cls):
+        super()._create_schema()
+        with cls.engine.begin() as conn:
+            conn.exec_driver_sql("DROP TABLE citas")
+            conn.exec_driver_sql("""CREATE TABLE citas (id_cita INTEGER PRIMARY KEY,
+                id_paciente INTEGER, id_medico INTEGER, id_especialidad INTEGER,
+                fecha_cita DATE, hora_inicio VARCHAR(20), hora_fin VARCHAR(20),
+                motivo TEXT, estado TEXT, tipo_consulta TEXT, notas TEXT,
+                created_at TIMESTAMP, updated_at TIMESTAMP)""")
+
+    def test_horas_invalidas_no_anuncian_disponibilidad(self):
+        self._horario()
+        for inicio, fin in (("basura", "11:00"), (None, "11:00"),
+                            ("11:00", "10:00"), ("10:00+01:00", "11:00")):
+            with self.subTest(inicio=inicio, fin=fin):
+                with self.engine.begin() as conn:
+                    conn.exec_driver_sql("DELETE FROM citas")
+                    conn.execute(text("""INSERT INTO citas
+                        (id_cita,id_paciente,id_medico,fecha_cita,hora_inicio,hora_fin)
+                        VALUES (1,40,20,'2026-09-10',:inicio,:fin)"""),
+                        {"inicio": inicio, "fin": fin})
+                data = self._slots()
+                self.assertFalse(data["citas_verificadas"])
+                self.assertTrue(data["advertencias"])
+                self.assertFalse(any(s["disponible"] for s in data["slots"]))
 
 
 if __name__ == "__main__":
