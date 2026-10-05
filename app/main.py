@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+﻿from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.modules.auth.router import router as auth_router
@@ -12,16 +12,17 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# Configuración de CORS - permite cualquier origen (JWT Bearer tokens, no cookies)
+# ConfiguraciÃ³n de CORS - permite cualquier origen (JWT Bearer tokens, no cookies)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=settings.cors_origins_list,
+    allow_origin_regex=".*",
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Registro de routers de módulos
+# Registro de routers de mÃ³dulos
 app.include_router(auth_router)
 app.include_router(medical_records_router)
 
@@ -34,3 +35,4 @@ def health_check():
         "app": "Telemedicina API",
         "version": "1.0.0"
     }
+
