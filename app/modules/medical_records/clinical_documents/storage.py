@@ -24,25 +24,6 @@ class StorageError(Exception):
     """Error genérico del servicio de almacenamiento."""
 
 
-def _sanitize_key(key: str) -> str:
-    """Normaliza una clave de objeto y rechaza rutas/URLs absolutas.
-
-    Evita que un `archivo_url` legacy con forma de ruta web (`/api/...`)
-    genere URLs dobles como `/file//api/...`. Lanza StorageError si la
-    clave no es un path relativo válido dentro del storage.
-    """
-    normalizada = (key or "").strip().lstrip("/")
-    if (
-        not normalizada
-        or "://" in normalizada
-        or "\\" in normalizada
-        or normalizada.startswith("api/")
-        or "/api/" in normalizada
-    ):
-        raise StorageError(f"Clave de archivo inválida: {key!r}")
-    return normalizada
-
-
 class DocumentStorage:
     """Abstracción de almacenamiento de archivos para documentos clínicos."""
 
@@ -103,8 +84,6 @@ class DocumentStorage:
         """Genera una URL de descarga temporal. Devuelve (url, expira_en_segundos)."""
         expires = min(max(settings.DOCUMENTO_URL_EXPIRACION, 60), 900)
 
-        key = _sanitize_key(key)
-
         if self.backend == "minio":
             url = self._minio_client.generate_presigned_url(
                 "get_object",
@@ -130,24 +109,6 @@ class DocumentStorage:
         if not str(file_path).startswith(str(self.local_dir)) or not file_path.is_file():
             return None
         return file_path.read_bytes()
-
-    def delete(self, key: str) -> bool:
-        """Elimina un archivo (compensación ante rollback, CU16).
-
-        Devuelve True si el objeto ya no existe al finalizar.
-        """
-        try:
-            if self.backend == "minio":
-                self._minio_client.delete_object(Bucket=settings.MINIO_BUCKET, Key=key)
-                return True
-            file_path = (self.local_dir / Path(key)).resolve()
-            if not str(file_path).startswith(str(self.local_dir)):
-                return False
-            if file_path.is_file():
-                file_path.unlink()
-            return True
-        except Exception:
-            return False
 
 
 storage = DocumentStorage()

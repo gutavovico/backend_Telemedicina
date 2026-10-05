@@ -9,7 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy import inspect, func, ForeignKey
+from sqlalchemy import ForeignKey, func, inspect
 
 # revision identifiers, used by Alembic.
 revision: str = '002_alinear_ddl'
@@ -33,20 +33,10 @@ def columns_exist(connection, table_name, column_names):
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    
-    # Crear tablas solo si no existen usando IF NOT EXISTS
-    # y agregar columnas a usuarios si faltan
-    
-    # Agregar columnas id_clinica e id_rol a usuarios si no existen
-    conn = op.get_bind()
-    insp = inspect(conn)
-    existing_cols = [c['name'] for c in insp.get_columns('usuarios')]
-    if 'id_clinica' not in existing_cols:
-        op.add_column('usuarios', sa.Column('id_clinica', sa.BigInteger(), sa.ForeignKey('clinicas.id_clinica'), nullable=True))
-    if 'id_rol' not in existing_cols:
-        op.add_column('usuarios', sa.Column('id_rol', sa.BigInteger(), sa.ForeignKey('roles.id_rol'), nullable=True))
-    
+    # Las tablas se crean con SQL crudo e idempotente (CREATE TABLE IF NOT EXISTS)
+    # mas abajo; antes existia aqui una lista `tables_to_create` en Python que
+    # quedó como codigo muerto tras un refactor y provocaba AttributeError.
+
     # Crear tablas solo si no existen (usando SQL raw con IF NOT EXISTS)
     # Clinicas
     op.execute("""
@@ -72,6 +62,20 @@ def upgrade() -> None:
             descripcion TEXT,
             estado VARCHAR(20) NOT NULL DEFAULT 'ACTIVO')
         """)
+
+    # Agregar columnas id_clinica e id_rol a usuarios si no existen.
+    # Debe ocurrir DESPUES de crear clinicas y roles: la FK referenciada tiene que
+    # existir antes, de lo contrario Postgres falla con
+    # `relation "clinicas" does not exist`.
+    # Nota: no se usa `with op.get_bind() as conn:` porque al salir del bloque
+    # SQLAlchemy cierra la conexion de la migracion y las siguientes sentencias
+    # fallan con "This Connection is closed".
+    bind = op.get_bind()
+    existing_cols = [c['name'] for c in inspect(bind).get_columns('usuarios')]
+    if 'id_clinica' not in existing_cols:
+        op.add_column('usuarios', sa.Column('id_clinica', sa.BigInteger(), sa.ForeignKey('clinicas.id_clinica'), nullable=False))
+    if 'id_rol' not in existing_cols:
+        op.add_column('usuarios', sa.Column('id_rol', sa.BigInteger(), sa.ForeignKey('roles.id_rol'), nullable=False))
     # Notificaciones
     op.execute("""
         CREATE TABLE IF NOT EXISTS notificaciones (
@@ -104,23 +108,30 @@ def upgrade() -> None:
     
     # Ahora agregar las restricciones y índices que faltan
     # Agregar restricción única en nit de clinicas si no existe
-    op.execute("""
+    op.execute(r"""
         DO $$
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'clinicas_nit_key') THEN
-                CREATE UNIQUE INDEX IF NOT EXISTS clinitas_nit_key ON clinicas (nit);
+                CREATE UNIQUE INDEX clinicas_nit_key ON clinicas (nit);
             END IF;
         END$$;
     """)
-    
-    # Agregar restricción única en numero_historia de historias_clinicas si la tabla existe
-    op.execute("""
+
+    # Agregar restricción única en numero_historia de historias_clinicas.
+    # La tabla no la crea ninguna migracion del repositorio, por lo que el bloque
+    # se omite si no existe en lugar de romper una base nueva.
+    op.execute(r"""
         DO $$
         BEGIN
-            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'historias_clinicas') THEN
-                IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'historias_clinicas_numero_historia_key') THEN
-                    CREATE UNIQUE INDEX historias_clinicas_numero_historia_key ON historias_clinicas (numero_historia);
-                END IF;
+            IF EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'historias_clinicas'
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM pg_indexes WHERE indexname = 'historias_clinicas_numero_historia_key'
+            ) THEN
+                CREATE UNIQUE INDEX historias_clinicas_numero_historia_key
+                    ON historias_clinicas (numero_historia);
             END IF;
         END$$;
     """)
@@ -128,10 +139,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # Lógica reversa: eliminar las columnas agregadas y dropar tablas
-    conn = op.get_bind()
-    insp = inspect(conn)
-    # Verificar si las columnas existen antes de eliminarlas
-    existing_cols = [c['name'] for c in insp.get_columns('usuarios')]
+    # (sin `with`, para no cerrar la conexión de la migración)
+    bind = op.get_bind()
+    existing_cols = [c['name'] for c in inspect(bind).get_columns('usuarios')]
     if 'id_clinica' in existing_cols:
         op.drop_column('usuarios', 'id_clinica')
     if 'id_rol' in existing_cols:
@@ -145,6 +155,6 @@ def downgrade() -> None:
     
     # Restablecer restricciones únicas
     op.execute("""
-        DROP INDEX IF EXISTS clinitas_nit_key;
+        DROP INDEX IF EXISTS clinicas_nit_key;
         DROP INDEX IF EXISTS historias_clinicas_numero_historia_key;
     """)

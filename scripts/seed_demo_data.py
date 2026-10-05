@@ -27,6 +27,7 @@ from app.modules.medical_records.fichas.models import FichaClinica
 from app.modules.medical_records.hce.models import HistoriaClinica, Consulta, Diagnostico
 from app.modules.medical_records.clinical_documents.models import DocumentoClinico
 from app.modules.communications.models import MensajeChatCita
+from app.modules.medical_records.prescriptions.models import Medicamento
 
 
 def _pdf_placeholder_bytes(titulo: str, lineas: list | None = None) -> bytes:
@@ -84,6 +85,10 @@ def seed_all():
             c1 = Clinica(
                 id_clinica=1,
                 nombre="Clínica Central San Juan de Dios",
+                razon_social="Clínica Central San Juan de Dios S.R.L.",
+                nit="1020304050",
+                telefono="+591 33450001",
+                correo="contacto@clinicacentral.com",
                 direccion="Av. Cañoto esq. México #450, Santa Cruz",
                 estado="ACTIVO",
             )
@@ -91,6 +96,14 @@ def seed_all():
             print("  [+] Creada Clínica Central (id_clinica=1)")
         else:
             c1.nombre = "Clínica Central San Juan de Dios"
+            if not c1.razon_social:
+                c1.razon_social = "Clínica Central San Juan de Dios S.R.L."
+            if not c1.nit:
+                c1.nit = "1020304050"
+            if not c1.telefono:
+                c1.telefono = "+591 33450001"
+            if not c1.correo:
+                c1.correo = "contacto@clinicacentral.com"
             c1.direccion = "Av. Cañoto esq. México #450, Santa Cruz"
             c1.estado = "ACTIVO"
             print("  [=] Clínica Central actualizada")
@@ -100,6 +113,10 @@ def seed_all():
             c2 = Clinica(
                 id_clinica=2,
                 nombre="Red Médica del Norte",
+                razon_social="Red Médica del Norte S.R.L.",
+                nit="1020304060",
+                telefono="+591 33450002",
+                correo="contacto@redmedicanorte.com",
                 direccion="Av. Banzer Km 5.5 #120, Santa Cruz",
                 estado="ACTIVO",
             )
@@ -107,6 +124,15 @@ def seed_all():
             print("  [+] Creada Clínica Norte (id_clinica=2)")
         else:
             c2.nombre = "Red Médica del Norte"
+            if not c2.razon_social:
+                c2.razon_social = "Red Médica del Norte S.R.L."
+            if not c2.nit:
+                c2.nit = "1020304060"
+            if not c2.telefono:
+                c2.telefono = "+591 33450002"
+            if not c2.correo:
+                c2.correo = "contacto@redmedicanorte.com"
+            c2.direccion = "Av. Banzer Km 5.5 #120, Santa Cruz"
             c2.estado = "ACTIVO"
             print("  [=] Clínica Norte verificada")
 
@@ -247,6 +273,15 @@ def seed_all():
                 "id_rol": 2,
                 "id_clinica": 1,
                 "telefono": "+591 71111111",
+            },
+            {
+                "correo": "admin.norte@telemedicina.com",
+                "password": "admin123",
+                "nombres": "Administrador",
+                "apellidos": "Norte",
+                "id_rol": 1,
+                "id_clinica": 2,
+                "telefono": "+591 70000002",
             },
             {
                 "correo": "medico.norte@telemedicina.com",
@@ -1205,6 +1240,56 @@ def seed_all():
                     setattr(existente, k, v)
                 existente.check_in = None
                 print(f"  [=] Cita CU08 reseteada para paciente {c_data['id_paciente']} hoy {c_data['hora_inicio']}")
+        db.flush()
+
+        # Catálogo de medicamentos (CU16): global, sin id_clinica por diseño.
+        # Idempotente por (lower(nombre), lower(concentracion), lower(forma)),
+        # igual que uq_medicamentos_normalizado: si existe se actualiza,
+        # si no se crea. Re-ejecutar no duplica.
+        print("\n[10d/10] Verificando Catálogo de Medicamentos (CU16)...")
+        medicamentos_seed = [
+            # Dolor de cabeza / fiebre
+            {"nombre": "Paracetamol 500 mg tableta", "principio_activo": "Paracetamol", "concentracion": "500 mg", "forma_farmaceutica": "Tableta", "descripcion": "Analgésico y antipirético para dolor de cabeza y fiebre."},
+            {"nombre": "Ibuprofeno 400 mg tableta", "principio_activo": "Ibuprofeno", "concentracion": "400 mg", "forma_farmaceutica": "Tableta", "descripcion": "AINE para dolor, cefalea e inflamación."},
+            {"nombre": "Aspirina 100 mg tableta", "principio_activo": "Ácido acetilsalicílico", "concentracion": "100 mg", "forma_farmaceutica": "Tableta", "descripcion": "Antiagregante y analgésico en dosis bajas."},
+            {"nombre": "Diclofenaco 50 mg tableta", "principio_activo": "Diclofenaco potásico", "concentracion": "50 mg", "forma_farmaceutica": "Tableta", "descripcion": "AINE para dolor musculoesquelético y cefalea."},
+            # Resfriado / alergia / tos
+            {"nombre": "Loratadina 10 mg tableta", "principio_activo": "Loratadina", "concentracion": "10 mg", "forma_farmaceutica": "Tableta", "descripcion": "Antihistamínico para resfriado y rinitis alérgica."},
+            {"nombre": "Cetirizina 10 mg tableta", "principio_activo": "Cetirizina", "concentracion": "10 mg", "forma_farmaceutica": "Tableta", "descripcion": "Antihistamínico para alergia y estornudos."},
+            {"nombre": "Clorfenamina 4 mg tableta", "principio_activo": "Clorfenamina", "concentracion": "4 mg", "forma_farmaceutica": "Tableta", "descripcion": "Antihistamínico clásico para resfriado común."},
+            {"nombre": "Ambroxol 30 mg/5 mL jarabe", "principio_activo": "Ambroxol", "concentracion": "30 mg/5 mL", "forma_farmaceutica": "Jarabe", "descripcion": "Mucolítico para tos con flemas."},
+            {"nombre": "Oximetazolina 0.05% spray nasal", "principio_activo": "Oximetazolina", "concentracion": "0.05%", "forma_farmaceutica": "Spray nasal", "descripcion": "Descongestivo nasal para resfriado."},
+            # Antibióticos usuales
+            {"nombre": "Amoxicilina 500 mg cápsula", "principio_activo": "Amoxicilina", "concentracion": "500 mg", "forma_farmaceutica": "Cápsula", "descripcion": "Antibiótico betalactámico de uso frecuente."},
+            {"nombre": "Azitromicina 500 mg tableta", "principio_activo": "Azitromicina", "concentracion": "500 mg", "forma_farmaceutica": "Tableta", "descripcion": "Macrólido para infecciones respiratorias."},
+            {"nombre": "Ciprofloxacino 500 mg tableta", "principio_activo": "Ciprofloxacino", "concentracion": "500 mg", "forma_farmaceutica": "Tableta", "descripcion": "Quinolona para infecciones urinarias y digestivas."},
+            {"nombre": "Metronidazol 500 mg tableta", "principio_activo": "Metronidazol", "concentracion": "500 mg", "forma_farmaceutica": "Tableta", "descripcion": "Antiparasitario y antibiótico anaerobio."},
+            {"nombre": "Albendazol 400 mg tableta", "principio_activo": "Albendazol", "concentracion": "400 mg", "forma_farmaceutica": "Tableta", "descripcion": "Antiparasitario intestinal de dosis única."},
+            # Crónicos / digestivo / otros usuales en Bolivia
+            {"nombre": "Omeprazol 20 mg cápsula", "principio_activo": "Omeprazol", "concentracion": "20 mg", "forma_farmaceutica": "Cápsula", "descripcion": "Inhibidor de bomba de protones para gastritis."},
+            {"nombre": "Metformina 850 mg tableta", "principio_activo": "Metformina", "concentracion": "850 mg", "forma_farmaceutica": "Tableta", "descripcion": "Antidiabético oral de primera línea."},
+            {"nombre": "Losartán 50 mg tableta", "principio_activo": "Losartán potásico", "concentracion": "50 mg", "forma_farmaceutica": "Tableta", "descripcion": "Antihipertensivo ARA-II."},
+            {"nombre": "Enalapril 10 mg tableta", "principio_activo": "Enalapril", "concentracion": "10 mg", "forma_farmaceutica": "Tableta", "descripcion": "IECA para hipertensión."},
+            {"nombre": "Atorvastatina 20 mg tableta", "principio_activo": "Atorvastatina", "concentracion": "20 mg", "forma_farmaceutica": "Tableta", "descripcion": "Estatina para colesterol elevado."},
+            {"nombre": "Salbutamol 100 mcg inhalador", "principio_activo": "Salbutamol", "concentracion": "100 mcg/dosis", "forma_farmaceutica": "Inhalador", "descripcion": "Broncodilatador para asma."},
+            {"nombre": "Sales de rehidratación oral sobre", "principio_activo": "Sales de rehidratación", "concentracion": "27.9 g", "forma_farmaceutica": "Polvo para solución", "descripcion": "Rehidratación oral para diarrea y deshidratación."},
+        ]
+        for m_data in medicamentos_seed:
+            existente = db.query(Medicamento).filter(
+                func.lower(Medicamento.nombre) == m_data["nombre"].lower(),
+                func.lower(func.coalesce(Medicamento.concentracion, "")) == (m_data["concentracion"] or "").lower(),
+                func.lower(func.coalesce(Medicamento.forma_farmaceutica, "")) == (m_data["forma_farmaceutica"] or "").lower(),
+            ).first()
+            if not existente:
+                db.add(Medicamento(estado="ACTIVO", **m_data))
+                print(f"  [+] Medicamento creado: {m_data['nombre']}")
+            else:
+                existente.principio_activo = m_data["principio_activo"]
+                existente.concentracion = m_data["concentracion"]
+                existente.forma_farmaceutica = m_data["forma_farmaceutica"]
+                existente.descripcion = m_data["descripcion"]
+                existente.estado = "ACTIVO"
+                print(f"  [=] Medicamento verificado: {m_data['nombre']}")
         db.flush()
 
         # NOTA CU16: no se siembran recetas firmadas. Receta exige

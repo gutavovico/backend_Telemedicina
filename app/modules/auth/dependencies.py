@@ -1,10 +1,13 @@
 from typing import List, Optional
+
 from fastapi import Depends, Header, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.modules.auth.models import Usuario
+from app.modules.auth.service import get_user_by_id
+from app.modules.auth.session_service import enforce_inactivity
 
 security = HTTPBearer(auto_error=False)
 ADMIN_ROLE_ID = 1
@@ -24,7 +27,7 @@ def get_current_user(
 
     token = credentials.credentials
     payload = decode_access_token(token)
-    
+
     user_id_str = payload.get("sub")
     if not user_id_str:
         raise HTTPException(
@@ -32,7 +35,7 @@ def get_current_user(
             detail="Token inválido: falta identificador de usuario",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     try:
         user_id = int(user_id_str)
     except ValueError:
@@ -41,33 +44,44 @@ def get_current_user(
             detail="Token inválido: identificador no numérico",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    user = db.query(Usuario).filter(Usuario.id_usuario == user_id).first()
+
+    user = get_user_by_id(db, user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Usuario no encontrado",
         )
 
-    if payload.get("token_version", 0) != user.token_version:
+    # CU24: el cierre de sesion incrementa `token_version`, lo que invalida todos
+    # los access tokens emitidos hasta entonces.
+    token_version = payload.get("token_version")
+    if token_version is not None and int(token_version) != int(user.token_version or 0):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Sesión cerrada o token revocado",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
+    # CU23: ventana de inactividad por sesion.
+    enforce_inactivity(
+        db,
+        payload.get("jti"),
+        user_id,
+        id_clinica=user.id_clinica,
+    )
+
     if user.estado.lower() != "activo":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="La cuenta de usuario está inactiva o suspendida",
         )
-    
+
     return user
 
 
 def get_current_tenant_id(
     x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
-    current_user: Optional[Usuario] = Depends(get_current_user)
+    current_user: Optional[Usuario] = Depends(get_current_user),
 ) -> Optional[int]:
     """Resolves tenant_id from authenticated user or X-Tenant-ID header."""
     if current_user and current_user.id_clinica is not None:
@@ -84,15 +98,7 @@ def get_required_tenant_id(
     x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
     current_user: Usuario = Depends(get_current_user),
 ) -> int:
-    """Obtiene el tenant de una sesión asociada a una clínica.
-
-    Prioriza id_clinica del usuario autenticado. El header X-Tenant-ID
-    NUNCA concede un tenant a un usuario sin clínica, salvo superadmin
-    global verificado (rol global id_clinica=None). Esto evita la
-    escalación donde un admin de tenant desvinculado (rol.id_clinica=1,
-    user.id_clinica=None) se hacía pasar por superadmin.
-    Pacientes (rol 4) caen a la clínica principal (1).
-    """
+    """Obtiene el tenant de una sesión asociada a una clínica."""
     if current_user.id_clinica is not None:
         return current_user.id_clinica
     if x_tenant_id:
@@ -110,17 +116,22 @@ def get_required_tenant_id(
     )
 
 
-def _is_global_super_admin(current_user: Usuario) -> bool:
+def _is_global_super_admin(current_user: Optional[Usuario]) -> bool:
     """Superadmin real: sin clínica Y con rol global (rol.id_clinica=None)."""
     if current_user is None or current_user.id_clinica is not None:
         return False
-    rol = getattr(current_user, "rol", None)
-    if rol is not None and getattr(rol, "id_clinica", None) is not None:
+    rol_obj = getattr(current_user, "rol_rel", None)
+    if rol_obj is not None and getattr(rol_obj, "id_clinica", None) is not None:
         return False
     if current_user.id_rol == 1:
         return True
     try:
-        rol_name = (rol.nombre.strip().upper() if rol and getattr(rol, "nombre", None) else "")
+        if isinstance(current_user.rol, str):
+            rol_name = current_user.rol.strip().upper()
+        elif rol_obj and getattr(rol_obj, "nombre", None):
+            rol_name = rol_obj.nombre.strip().upper()
+        else:
+            rol_name = ""
         if "SUPER" in rol_name:
             return True
     except Exception:
@@ -133,8 +144,12 @@ def require_admin(current_user: Usuario = Depends(get_current_user)) -> Usuario:
     if _is_global_super_admin(current_user):
         return current_user
     if current_user.id_rol != ADMIN_ROLE_ID:
-        # Check if role name is ADMIN (o SUPER global con otro id)
-        rol_name = current_user.rol.nombre.upper() if current_user.rol and current_user.rol.nombre else ""
+        if isinstance(current_user.rol, str):
+            rol_name = current_user.rol.strip().upper()
+        elif getattr(current_user, "rol_rel", None) and getattr(current_user.rol_rel, "nombre", None):
+            rol_name = current_user.rol_rel.nombre.strip().upper()
+        else:
+            rol_name = ""
         if rol_name not in ["ADMIN", "ADMINISTRADOR", "ADMINISTRACION"] and "SUPER" not in rol_name:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -146,13 +161,18 @@ def require_admin(current_user: Usuario = Depends(get_current_user)) -> Usuario:
 def require_roles(allowed_roles: List[str]):
     """Allow access to users matching any of the specified roles (o Super Admin global)."""
     def role_checker(current_user: Usuario = Depends(get_current_user)) -> Usuario:
-        # Bypass global: Super Administrador (rol global) accede a todo.
         if _is_global_super_admin(current_user):
             return current_user
-        role_name = current_user.rol.nombre.upper() if current_user.rol else ""
+
+        if isinstance(current_user.rol, str):
+            role_name = current_user.rol.strip().upper()
+        elif getattr(current_user, "rol_rel", None) and getattr(current_user.rol_rel, "nombre", None):
+            role_name = current_user.rol_rel.nombre.strip().upper()
+        else:
+            role_name = ""
+
         allowed_upper = [r.upper() for r in allowed_roles]
-        
-        # If admin is in allowed and user has admin id
+
         if "ADMIN" in allowed_upper and current_user.id_rol == ADMIN_ROLE_ID:
             return current_user
 
@@ -163,3 +183,4 @@ def require_roles(allowed_roles: List[str]):
             )
         return current_user
     return role_checker
+

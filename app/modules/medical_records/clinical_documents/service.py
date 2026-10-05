@@ -15,7 +15,7 @@ from app.modules.medical_records.clinical_documents.schemas import (
     DocumentoClinicoCreateRequest,
     DocumentoClinicoUpdateRequest,
 )
-from app.modules.medical_records.clinical_documents.storage import StorageError, storage
+from app.modules.medical_records.clinical_documents.storage import storage
 
 PERMISO_SEARCH = "documents:search"
 PERMISO_DOWNLOAD = "documents:download"
@@ -49,8 +49,9 @@ def _apply_role_scope(db: Session, query, current_user: Usuario, tenant_id: Opti
     q = query
 
     # Aislamiento estricto por inquilino
-    if tenant_id is not None:
-        q = q.filter(DocumentoClinico.id_clinica == tenant_id)
+    if tenant_id is None:
+        raise DocumentServiceError(403, "No se pudo resolver el tenant del usuario")
+    q = q.filter(DocumentoClinico.id_clinica == tenant_id)
 
     # Filtro por tipo de documento y verificación granular de recepción
     tipo = filters.get("tipo_documento")
@@ -115,7 +116,7 @@ def get_document_or_404(
     doc = db.query(DocumentoClinico).filter(DocumentoClinico.id_documento == id_documento).first()
     if not doc or doc.estado != "ACTIVO":
         return None
-    if tenant_id is not None and doc.id_clinica != tenant_id:
+    if tenant_id is None or doc.id_clinica != tenant_id:
         return None
 
     # Alcance por rol
@@ -226,70 +227,56 @@ def generate_download_url(
         raise DocumentServiceError(403, f"Permiso denegado. Se requiere el permiso '{PERMISO_DOWNLOAD}'.")
 
     file_name = doc.archivo_url.split("/")[-1]
-    try:
-        url, expires = storage.generate_download_url(doc.archivo_url, file_name, "application/pdf")
-    except StorageError:
-        raise DocumentServiceError(
-            404, "Archivo no disponible para este documento. Contacte a administración."
-        )
+    url, expires = storage.generate_download_url(doc.archivo_url, file_name, "application/pdf")
     return doc, url, expires, {"nombre_archivo": file_name, "content_type": "application/pdf"}
 
 
 def audit(db: Session, id_clinica: int, id_usuario: int, tabla: str, registro_id: int,
           accion: str, descripcion: Optional[str] = None) -> None:
     """Registra una operación en la tabla auditoria (multitenant)."""
-    try:
-        db.execute(
-            sql_text(
-                "INSERT INTO auditoria (id_clinica, id_usuario, tabla_afectada, registro_id, accion, descripcion, direccion_ip) "
-                "VALUES (:clinica, :usuario, :tabla, :registro, :accion, :desc, NULL)"
-            ),
-            {
-                "clinica": id_clinica,
-                "usuario": id_usuario,
-                "tabla": tabla,
-                "registro": registro_id,
-                "accion": accion,
-                "desc": descripcion,
-            },
-        )
-        db.commit()
-    except Exception:
-        db.rollback()
+    db.execute(
+        sql_text(
+            "INSERT INTO auditoria (id_clinica, id_usuario, tabla_afectada, registro_id, accion, descripcion, direccion_ip) "
+            "VALUES (:clinica, :usuario, :tabla, :registro, :accion, :desc, NULL)"
+        ),
+        {
+            "clinica": id_clinica,
+            "usuario": id_usuario,
+            "tabla": tabla,
+            "registro": registro_id,
+            "accion": accion,
+            "desc": descripcion,
+        },
+    )
+    db.commit()
 
 
 def notify_download(db: Session, doc: DocumentoClinico, accion: str) -> None:
     """Crea una notificación de tipo DOCUMENTO_DESCARGADO para el usuario destino."""
     id_usuario = None
     if doc.id_paciente:
-        try:
-            row = db.execute(
-                sql_text("SELECT id_usuario FROM pacientes WHERE id_paciente = :id AND id_usuario IS NOT NULL"),
-                {"id": doc.id_paciente},
-            ).first()
-            if row:
-                id_usuario = row[0]
-        except Exception:
-            pass
+        row = db.execute(
+            sql_text("SELECT id_usuario FROM pacientes WHERE id_paciente = :id AND id_usuario IS NOT NULL"),
+            {"id": doc.id_paciente},
+        ).first()
+        if row:
+            id_usuario = row[0]
 
     if id_usuario is None:
         return
 
-    try:
-        db.execute(
-            sql_text(
-                "INSERT INTO notificaciones (id_usuario, tipo, canal, titulo, mensaje, estado) "
-                "VALUES (:usuario, 'DOCUMENTO_DESCARGADO', 'EMAIL', :titulo, :mensaje, 'PENDIENTE')"
-            ),
-            {
-                "usuario": id_usuario,
-                "titulo": "Documento descargado",
-                "mensaje": f"El documento {doc.titulo} ({doc.tipo_documento}) fue descargado/consultado.",
-            },
-        )
-        db.commit()
-    except Exception:
-        db.rollback()
+    db.execute(
+        sql_text(
+            "INSERT INTO notificaciones (id_usuario, tipo, canal, titulo, mensaje, estado) "
+            "VALUES (:usuario, 'DOCUMENTO_DESCARGADO', 'EMAIL', :titulo, :mensaje, 'PENDIENTE')"
+        ),
+        {
+            "usuario": id_usuario,
+            "titulo": "Documento descargado",
+            "mensaje": f"El documento {doc.titulo} ({doc.tipo_documento}) fue descargado/consultado.",
+        },
+    )
+    db.commit()
 
 
 def file_name_for(doc: DocumentoClinico) -> str:
