@@ -59,17 +59,17 @@ async def analizar_triaje_ia(form: TriageForm, files: list[UploadFile] = None) -
 
     try:
         response = client.models.generate_content(
-            model='gemini-3.8-flash',
+            model='gemini-3.5-flash',
             contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
             ),
         )
     except Exception as e_main:
-        print(f"gemini-3.8-flash failed ({e_main}), falling back to gemini-1.5-flash...")
+        print(f"gemini-3.5-flash failed ({e_main}), falling back to gemini-3.1-flash-lite...")
         try:
             response = client.models.generate_content(
-                model='gemini-1.5-flash',
+                model='gemini-3.5-flash',
                 contents=contents,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -110,3 +110,5 @@ def obtener_triaje_preliminar(form: TriageForm) -> TriageResponse:
         recomendaciones=["Complete el formulario y adjunte evidencias para un análisis con IA"],
         motivo_clasificacion="Evaluación preliminar por sistema experto",
     )
+
+

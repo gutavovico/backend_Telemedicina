@@ -21,7 +21,7 @@ def preliminar(form: TriageForm):
 async def analizar(
     motivo: str = Form(...),
     intensidad_dolor: int = Form(...),
-    tiempo_evolucion: str = Form(...),
+    tiempo_evolucion: str = Form("No especificado"),
     signos_alarma: str = Form("[]"),
     consulta_directa: str = Form(...),
     evidencia: Optional[List[UploadFile]] = File(None)
