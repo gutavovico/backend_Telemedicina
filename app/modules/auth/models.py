@@ -17,6 +17,36 @@ class Clinica(Base):
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class RolPermiso(Base):
+    __tablename__ = "rol_permisos"
+
+    id_rol = Column(BigInteger, ForeignKey("roles.id_rol"), primary_key=True)
+    id_permiso = Column(BigInteger, ForeignKey("permisos.id_permiso"), primary_key=True)
+
+    rol = relationship("Rol", back_populates="rol_permisos")
+    permiso = relationship("Permiso", back_populates="rol_permisos")
+
+    def __repr__(self) -> str:
+        return f"<RolPermiso(id_rol={self.id_rol}, id_permiso={self.id_permiso})>"
+
+
+class Permiso(Base):
+    __tablename__ = "permisos"
+
+    id_permiso = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
+    nombre = Column(String(100), nullable=False)
+    descripcion = Column(String, nullable=True)
+    modulo = Column(String(100), nullable=False)
+    accion = Column(String(100), nullable=False)
+    estado = Column(String(20), nullable=False, default="ACTIVO")
+
+    rol_permisos = relationship("RolPermiso", back_populates="permiso", cascade="all, delete-orphan")
+    roles = relationship("Rol", secondary="rol_permisos", back_populates="permisos", viewonly=True)
+
+    def __repr__(self) -> str:
+        return f"<Permiso(id={self.id_permiso}, nombre='{self.nombre}', estado='{self.estado}')>"
+
+
 class Rol(Base):
     __tablename__ = "roles"
     id_rol = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -25,6 +55,12 @@ class Rol(Base):
     descripcion = Column(String, nullable=True)
     estado = Column(String(20), nullable=False, default="ACTIVO")
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    rol_permisos = relationship("RolPermiso", back_populates="rol", cascade="all, delete-orphan")
+    permisos = relationship("Permiso", secondary="rol_permisos", back_populates="roles", viewonly=True)
+
+    def __repr__(self) -> str:
+        return f"<Rol(id={self.id_rol}, nombre='{self.nombre}', estado='{self.estado}')>"
 
 
 class Usuario(Base):
@@ -60,13 +96,18 @@ class Usuario(Base):
         """
         return self.rol_rel.nombre if self.rol_rel else None
 
+    @property
+    def tenant_id(self):
+        return self.id_clinica
+
     def __repr__(self) -> str:
         return f"<Usuario(id={self.id_usuario}, correo='{self.correo}', estado='{self.estado}')>"
+
 
 class SesionActiva(Base):
     """Sesion autenticada individual, para medir inactividad por sesion (CU23).
 
-Existe una fila por par de tokens emitido en un login. `jti` es el claim que
+    Existe una fila por par de tokens emitido en un login. `jti` es el claim que
     viaja dentro del JWT y coincide con la clave de revocacion. Sin esta tabla
     solo se podria medir la inactividad por usuario, lo que cerraria tambien los
     demas dispositivos que el usuario aun no ha cerrado (decision D1 del change).
@@ -116,3 +157,34 @@ class TokenBlacklist(Base):
 
     def __repr__(self) -> str:
         return f"<TokenBlacklist(token='{self.token}')>"
+
+
+class Auditoria(Base):
+    __tablename__ = "auditoria"
+
+    id_auditoria = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
+    id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=False)
+    id_usuario = Column(BigInteger, ForeignKey("usuarios.id_usuario"), nullable=False)
+    tabla_afectada = Column(String(150), nullable=True)
+    registro_id = Column(BigInteger, nullable=True)
+    accion = Column(String(50), nullable=False)
+    descripcion = Column(String, nullable=True)
+    datos_anteriores = Column(String, nullable=True)
+    datos_nuevos = Column(String, nullable=True)
+    direccion_ip = Column(String(45), nullable=True)
+    fecha_hora = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<Auditoria(id={self.id_auditoria}, accion='{self.accion}', tabla='{self.tabla_afectada}')>"
+
+
+__all__ = [
+    "Clinica",
+    "Rol",
+    "RolPermiso",
+    "Permiso",
+    "Usuario",
+    "SesionActiva",
+    "TokenBlacklist",
+    "Auditoria",
+]
