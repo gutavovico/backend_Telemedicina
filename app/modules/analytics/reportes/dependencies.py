@@ -22,7 +22,11 @@ def require_report_admin(
     user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> int:
-    role = user.rol
+    # Current Usuario.rol exposes the name; rol_rel holds the role record.
+    role = getattr(user, "rol_rel", None)
+    if role is None:
+        legacy_role = getattr(user, "rol", None)
+        role = legacy_role if not isinstance(legacy_role, str) else None
     if (
         role is None
         or (user.estado or "").lower() != "activo"
