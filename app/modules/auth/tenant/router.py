@@ -85,12 +85,12 @@ def get_tenant_context(
     rol_nombre = ""
     if user_with_perms and user_with_perms.rol_rel:
         rol_nombre = user_with_perms.rol_rel.nombre
-        for p in user_with_perms.rol_rel.permisos:
-            if p.estado and p.estado.upper() != "ACTIVO":
+        for p in getattr(user_with_perms.rol_rel, "permisos", []):
+            if getattr(p, "estado", "") and p.estado.upper() != "ACTIVO":
                 continue
-            if p.nombre and p.nombre not in permisos:
+            if getattr(p, "nombre", None) and p.nombre not in permisos:
                 permisos.append(p.nombre)
-            if p.modulo and p.accion:
+            if getattr(p, "modulo", None) and getattr(p, "accion", None):
                 code = f"{p.modulo}.{p.accion}"
                 if code not in permisos:
                     permisos.append(code)

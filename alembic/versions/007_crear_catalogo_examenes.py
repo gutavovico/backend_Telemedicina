@@ -40,20 +40,29 @@ def upgrade() -> None:
         ON examenes_laboratorio (id_clinica, activo)
     """)
 
-    # Seed mínimo de exámenes comunes (idempotente con ON CONFLICT DO NOTHING)
+    # Seed mínimo de exámenes comunes (idempotente con ON CONFLICT DO NOTHING).
+    # NOTA FIX FK: la versión anterior hacía INSERT con id_clinica=1 hardcodeado,
+    # lo que rompía en BDs nuevas donde `clinicas` está vacía:
+    #   ForeignKeyViolation: La llave (id_clinica)=(1) no está presente en «clinicas».
+    # Se cambia a INSERT ... SELECT desde `clinicas`: siembra el catálogo para
+    # TODAS las clínicas existentes y no inserta nada (en vez de fallar) si aún
+    # no hay clínicas. No inventa tenants falsos.
     op.execute("""
         INSERT INTO examenes_laboratorio (id_clinica, codigo, nombre, categoria, precio_referencia, activo, requiere_ayuno, tiempo_entrega_horas)
-        VALUES
-            (1, 'HEMOGRAMA', 'Hemograma Completo', 'HEMATOLOGIA', 15000, 'SI', 0, 4),
-            (1, 'GLUCOSA', 'Glucosa en Sangre', 'BIOQUIMICA', 8000, 'SI', 1, 2),
-            (1, 'CREATININA', 'Creatinina Sérica', 'BIOQUIMICA', 8000, 'SI', 0, 4),
-            (1, 'UREA', 'Urea Sérica', 'BIOQUIMICA', 8000, 'SI', 0, 4),
-            (1, 'COLESTEROL_TOTAL', 'Colesterol Total', 'BIOQUIMICA', 12000, 'SI', 1, 4),
-            (1, 'TRIGLICERIDOS', 'Triglicéridos', 'BIOQUIMICA', 12000, 'SI', 1, 4),
-            (1, 'HEMOGLOBINA_GLICADA', 'Hemoglobina Glicada (HbA1c)', 'BIOQUIMICA', 25000, 'SI', 0, 24),
-            (1, 'TGO_TGP', 'Transaminasas (TGO/TGP)', 'BIOQUIMICA', 15000, 'SI', 0, 4),
-            (1, 'ORINA_COMPLETA', 'Orina Completa', 'OTROS', 10000, 'SI', 0, 4),
-            (1, 'COPROLOGICO', 'Coprológico Serie', 'MICROBIOLOGIA', 18000, 'SI', 0, 24)
+        SELECT c.id_clinica, v.codigo, v.nombre, v.categoria, v.precio_referencia, v.activo, v.requiere_ayuno, v.tiempo_entrega_horas
+        FROM clinicas c
+        CROSS JOIN (VALUES
+            ('HEMOGRAMA', 'Hemograma Completo', 'HEMATOLOGIA', 15000, 'SI', 0, 4),
+            ('GLUCOSA', 'Glucosa en Sangre', 'BIOQUIMICA', 8000, 'SI', 1, 2),
+            ('CREATININA', 'Creatinina Sérica', 'BIOQUIMICA', 8000, 'SI', 0, 4),
+            ('UREA', 'Urea Sérica', 'BIOQUIMICA', 8000, 'SI', 0, 4),
+            ('COLESTEROL_TOTAL', 'Colesterol Total', 'BIOQUIMICA', 12000, 'SI', 1, 4),
+            ('TRIGLICERIDOS', 'Triglicéridos', 'BIOQUIMICA', 12000, 'SI', 1, 4),
+            ('HEMOGLOBINA_GLICADA', 'Hemoglobina Glicada (HbA1c)', 'BIOQUIMICA', 25000, 'SI', 0, 24),
+            ('TGO_TGP', 'Transaminasas (TGO/TGP)', 'BIOQUIMICA', 15000, 'SI', 0, 4),
+            ('ORINA_COMPLETA', 'Orina Completa', 'OTROS', 10000, 'SI', 0, 4),
+            ('COPROLOGICO', 'Coprológico Serie', 'MICROBIOLOGIA', 18000, 'SI', 0, 24)
+        ) AS v(codigo, nombre, categoria, precio_referencia, activo, requiere_ayuno, tiempo_entrega_horas)
         ON CONFLICT (id_clinica, codigo) DO NOTHING
     """)
 
