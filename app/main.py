@@ -9,6 +9,7 @@ from app.modules.auth.roles_permissions.router import router as roles_permission
 from app.modules.auth.audit.router import router as audit_router
 from app.modules.medical_records.router import router as medical_records_router
 from app.modules.appointments.router import router as appointments_router
+from app.modules.analytics.router import router as analytics_router
 from app.modules.communications.router import router as communications_router
 from app.modules.medical_records.prescriptions.router import prescription_error_handler
 from app.modules.medical_records.prescriptions.service import PrescriptionError
@@ -54,6 +55,9 @@ app.include_router(medical_records_router)
 
 # Citas, Agenda y Perfil Médico (CU04, CU05, CU08, CU25)
 app.include_router(appointments_router)
+
+# Reportes y exportación (CU22/CU27)
+app.include_router(analytics_router)
 
 # Teleconsulta y Chat en Tiempo Real (CU15)
 app.include_router(communications_router)
