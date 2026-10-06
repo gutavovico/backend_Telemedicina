@@ -78,19 +78,19 @@ def get_tenant_context(
     permisos: List[str] = []
     user_with_perms = (
         db.query(Usuario)
-        .options(joinedload(Usuario.rol))
+        .options(joinedload(Usuario.rol_rel))
         .filter(Usuario.id_usuario == current_user.id_usuario)
         .first()
     )
     rol_nombre = ""
-    if user_with_perms and user_with_perms.rol:
-        rol_nombre = user_with_perms.rol.nombre
-        for p in user_with_perms.rol.permisos:
-            if p.estado and p.estado.upper() != "ACTIVO":
+    if user_with_perms and user_with_perms.rol_rel:
+        rol_nombre = user_with_perms.rol_rel.nombre
+        for p in getattr(user_with_perms.rol_rel, "permisos", []):
+            if getattr(p, "estado", "") and p.estado.upper() != "ACTIVO":
                 continue
-            if p.nombre and p.nombre not in permisos:
+            if getattr(p, "nombre", None) and p.nombre not in permisos:
                 permisos.append(p.nombre)
-            if p.modulo and p.accion:
+            if getattr(p, "modulo", None) and getattr(p, "accion", None):
                 code = f"{p.modulo}.{p.accion}"
                 if code not in permisos:
                     permisos.append(code)
