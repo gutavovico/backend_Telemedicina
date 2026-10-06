@@ -48,7 +48,18 @@ def hoy_cola() -> date:
 
 
 def _rol(user: Usuario) -> str:
-    nombre = user.rol.nombre if user.rol else ""
+    # `Usuario.rol` es una property que devuelve str (nombre del rol), no el objeto Rol.
+    # Se soportan ambos: str directo o objeto con `.nombre`, con fallback a `rol_rel`.
+    rol_val = getattr(user, "rol", None)
+    if isinstance(rol_val, str):
+        nombre = rol_val
+    elif rol_val is not None:
+        nombre = getattr(rol_val, "nombre", "") or ""
+    else:
+        nombre = ""
+    if not nombre:
+        rel = getattr(user, "rol_rel", None)
+        nombre = getattr(rel, "nombre", "") or "" if rel is not None else ""
     nombre = "".join(c for c in unicodedata.normalize("NFD", nombre.upper()) if not unicodedata.combining(c))
     if user.id_rol == 1 or nombre in ("ADMIN", "ADMINISTRADOR", "ADMINISTRACION"):
         return "ADMIN"
@@ -209,13 +220,19 @@ def computar_cola(db: Session, id_medico: int, fecha: date, tenant_id: int, ahor
         primera = next((e for e in entradas if e["estado"] != "EN_CURSO"), None)
         atraso = 0
         if primera is not None:
-            hora_primera = _a_hora(citas[entradas.index(primera)].hora_inicio)
+            cita_primera = next((c for c in citas if c.id_cita == primera["id_cita"]), None)
+            hora_primera = _a_hora(cita_primera.hora_inicio) if cita_primera is not None else None
             if hora_primera is not None:
                 delta = (ahora.time().hour - hora_primera.hour) * 60 + (ahora.time().minute - hora_primera.minute)
                 atraso = max(0, delta)
         if atraso > UMBRAL_DEMORA_MIN:
             estado_cola = "DEMORADA"
-            mensaje = f"La atención presenta una demora aproximada de {atraso} minutos"
+            if atraso >= 60:
+                horas, resto = divmod(atraso, 60)
+                demora_txt = f"{horas} h {resto:02d} min" if resto else f"{horas} h"
+            else:
+                demora_txt = f"{atraso} minutos"
+            mensaje = f"La atención presenta una demora aproximada de {demora_txt}"
         else:
             estado_cola, mensaje = "NORMAL", None
 

@@ -78,15 +78,15 @@ def post_registrar_clinica(
     db: Session = Depends(get_db),
 ):
     """Onboarding público: registra una clínica y su cuenta administradora."""
-    clinica, admin_user = service.registrar_clinica(db, data=payload)
+    creado = service.registrar_clinica(db, data=payload)
     return ClinicaRegistroResponse(
         clinica=ClinicaSummary(
-            id_clinica=clinica.id_clinica,
-            nombre=clinica.nombre,
-            estado=clinica.estado,
+            id_clinica=creado["id_clinica"],
+            nombre=creado["nombre"],
+            estado=creado["estado"],
         ),
         administrador=AdminSummary(
-            id_usuario=admin_user.id_usuario,
-            correo=admin_user.correo,
+            id_usuario=creado["id_usuario"],
+            correo=creado["correo"],
         ),
     )
