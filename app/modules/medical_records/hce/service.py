@@ -150,6 +150,11 @@ def registrar_consulta_clinica(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Cita no encontrada",
         )
+    if cita.id_clinica not in (None, target_clinica):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cita no encontrada en este centro médico",
+        )
     if cita.id_paciente != id_paciente:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

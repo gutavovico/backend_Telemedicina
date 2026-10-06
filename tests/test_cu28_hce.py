@@ -1,7 +1,9 @@
 import unittest
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import BigInteger, create_engine
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -9,6 +11,21 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import Usuario
+
+
+@compiles(JSONB, "sqlite")
+def compile_jsonb_sqlite(type_, compiler, **kwargs):
+    return "JSON"
+
+
+@compiles(ARRAY, "sqlite")
+def compile_array_sqlite(type_, compiler, **kwargs):
+    return "JSON"
+
+
+@compiles(BigInteger, "sqlite")
+def compile_big_integer_sqlite(type_, compiler, **kwargs):
+    return "INTEGER"
 
 
 class CU28HCETestCase(unittest.TestCase):
@@ -133,7 +150,7 @@ class CU28HCETestCase(unittest.TestCase):
         def dependency(db: Session = Depends(get_db)):
             return (
                 db.query(Usuario)
-                .options(joinedload(Usuario.rol))
+                .options(joinedload(Usuario.rol_rel))
                 .filter(Usuario.id_usuario == user_id)
                 .first()
             )
@@ -172,7 +189,7 @@ class CU28HCETestCase(unittest.TestCase):
         payload = self._payload_consulta_base()
 
         response = self.client.post("/api/v1/hce/pacientes/1/consultas", json=payload)
-        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.status_code, 201, response.text)
         data = response.json()
         self.assertEqual(data["id_clinica"], 1)
         self.assertEqual(data["id_historia"], 1)
@@ -206,6 +223,13 @@ class CU28HCETestCase(unittest.TestCase):
         payload = self._payload_consulta_base()
         response = self.client.post("/api/v1/hce/pacientes/3/consultas", json=payload)
         self.assertEqual(response.status_code, 404)
+
+    def test_medico_carga_paciente_de_su_clinica(self):
+        self._override_current_user(2)
+        response = self.client.get("/api/v1/pacientes/1")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["id_paciente"], 1)
+        self.assertEqual(self.client.get("/api/v1/pacientes/3").status_code, 404)
 
     def test_registrar_consulta_sin_diagnosticos_falla(self):
         self._override_current_user(2)
@@ -254,6 +278,11 @@ class CU28HCETestCase(unittest.TestCase):
         self.assertEqual(data["id_clinica"], 1)
         self.assertTrue(data["numero_historia"].startswith("HCE-"))
         self.assertEqual(data["alergias"], "Penicilina")
+        with self.engine.begin() as conn:
+            persisted = conn.exec_driver_sql(
+                "SELECT numero_historia FROM historias_clinicas WHERE id_paciente = 1 AND id_clinica = 1"
+            ).scalar()
+        self.assertEqual(persisted, data["numero_historia"])
 
 
 if __name__ == "__main__":
