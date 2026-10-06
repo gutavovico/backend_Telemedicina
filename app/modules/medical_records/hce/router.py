@@ -32,7 +32,15 @@ def obtener_historia_clinica(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Obtiene el expediente completo del paciente validando permisos por rol y aislamiento multitenant."""
-    rol_nombre = current_user.rol.nombre.upper() if current_user.rol else ""
+    # `Usuario.rol` es str (property): soportar str, objeto con .nombre y `rol_rel`.
+    _rv = getattr(current_user, "rol", None)
+    if isinstance(_rv, str):
+        rol_nombre = _rv.upper() if _rv else ""
+    elif _rv is not None:
+        rol_nombre = ((getattr(_rv, "nombre", "") or "").upper())
+    else:
+        _rel = getattr(current_user, "rol_rel", None)
+        rol_nombre = ((getattr(_rel, "nombre", "") or "").upper()) if _rel is not None else ""
     if rol_nombre == "PACIENTE" or current_user.id_rol == 4:
         perfil = get_patient_by_user_id(db, current_user.id_usuario, tenant_id=tenant_id)
         if not perfil or perfil.id_paciente != id_paciente:

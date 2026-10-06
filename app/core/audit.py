@@ -5,6 +5,21 @@ from sqlalchemy.orm import Session
 from app.modules.auth.models import Auditoria
 
 
+def _to_jsonb(value: Optional[Union[Dict[str, Any], str]]) -> Optional[Any]:
+    """Normaliza a valor JSONB: dict/list nativo, str JSON parseado, resto tal cual."""
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed
+        except Exception:
+            return value
+    return value
+
+
 def registrar_auditoria(
     db: Session,
     *,
@@ -22,17 +37,6 @@ def registrar_auditoria(
     Registra una traza en la tabla auditoria dentro de la transaccion activa.
     No hace commit ni rollback: queda a cargo del servicio que invoca al helper.
     """
-    datos_ant_str = (
-        json.dumps(datos_anteriores)
-        if isinstance(datos_anteriores, dict)
-        else datos_anteriores
-    )
-    datos_nuev_str = (
-        json.dumps(datos_nuevos)
-        if isinstance(datos_nuevos, dict)
-        else datos_nuevos
-    )
-
     auditoria = Auditoria(
         id_usuario=id_usuario,
         id_clinica=id_clinica,
@@ -40,8 +44,8 @@ def registrar_auditoria(
         registro_id=registro_id,
         accion=accion,
         descripcion=descripcion,
-        datos_anteriores=datos_ant_str,
-        datos_nuevos=datos_nuev_str,
+        datos_anteriores=_to_jsonb(datos_anteriores),
+        datos_nuevos=_to_jsonb(datos_nuevos),
         direccion_ip=direccion_ip,
     )
     db.add(auditoria)

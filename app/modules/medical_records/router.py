@@ -9,8 +9,22 @@ from app.modules.medical_records.prescriptions.router import (
     medicamentos_router,
 )
 from app.modules.medical_records.triage.router import router as triage_router
+from app.modules.medical_records.patient_profile.router import router as patient_profile_router
+from app.modules.medical_records.hce.router import router as hce_router
+from app.modules.medical_records.fichas.router import router as fichas_router
 
 router = APIRouter()
+
+# CU03 - Perfil y expediente de pacientes (GET /api/v1/pacientes/me, ...)
+# OJO: estos routers existen pero nunca se montaron → todo /pacientes/* e
+# /hce/* devolvía 404 genérico {"detail":"Not Found"}.
+router.include_router(patient_profile_router)
+
+# CU28 - Historia Clínica Electrónica (GET /api/v1/hce/pacientes/{id})
+router.include_router(hce_router)
+
+# CU09 - Fichas médicas (el frontend llama a /medical-records/fichas)
+router.include_router(fichas_router, prefix="/medical-records/fichas")
 
 # CU12 - Consultar Documentos Clinicos y Examenes
 router.include_router(clinical_documents_router)

@@ -11,7 +11,15 @@ ROL_ESTADO_ACTIVO = "ACTIVO"
 
 
 def _serialize_user(user: Usuario) -> dict[str, Any]:
-    role_name = user.rol.nombre if user.rol else None
+    # `Usuario.rol` es str (property): soportar str, objeto con .nombre y `rol_rel`.
+    _rv = getattr(user, "rol", None)
+    if isinstance(_rv, str):
+        role_name = _rv or None
+    elif _rv is not None:
+        role_name = getattr(_rv, "nombre", None)
+    else:
+        _rel = getattr(user, "rol_rel", None)
+        role_name = getattr(_rel, "nombre", None) if _rel is not None else None
     return {
         "id_usuario": user.id_usuario,
         "id_clinica": user.id_clinica,

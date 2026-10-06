@@ -108,7 +108,15 @@ def get_consulta_by_id(
         )
 
     # Si el usuario es PACIENTE, verificar que sea el dueño de la historia clínica
-    rol_nombre = current_user.rol.nombre.upper() if current_user.rol else ""
+    # `Usuario.rol` es str (property): soportar str, objeto con .nombre y `rol_rel`.
+    _rv = getattr(current_user, "rol", None)
+    if isinstance(_rv, str):
+        rol_nombre = _rv.upper() if _rv else ""
+    elif _rv is not None:
+        rol_nombre = ((getattr(_rv, "nombre", "") or "").upper())
+    else:
+        _rel = getattr(current_user, "rol_rel", None)
+        rol_nombre = ((getattr(_rel, "nombre", "") or "").upper()) if _rel is not None else ""
     if rol_nombre == "PACIENTE" or current_user.id_rol == 4:
         perfil_paciente = get_patient_by_user_id(db, current_user.id_usuario, tenant_id=tenant_id)
         if not perfil_paciente or consulta.historia.id_paciente != perfil_paciente.id_paciente:
