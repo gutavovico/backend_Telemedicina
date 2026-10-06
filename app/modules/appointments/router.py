@@ -9,16 +9,19 @@ from app.modules.appointments.live_queue.router import router as live_queue_rout
 
 router = APIRouter()
 
-# 1. Rutas principales de Médicos (/medicos y /appointments/medicos)
+# 1. Rutas principales de Médicos (/medicos, /appointments/medicos y /api/v1/medicos)
 router.include_router(doctor_profile_router)
 router.include_router(doctor_profile_router, prefix="/appointments")
+router.include_router(doctor_profile_router, prefix="/api/v1")
 
-# 2. Rutas del Catálogo de Especialidades (/especialidades y /appointments/especialidades)
+# 2. Rutas del Catálogo de Especialidades (/especialidades, /appointments/especialidades y /api/v1/especialidades)
 router.include_router(router_especialidades)
 router.include_router(router_especialidades, prefix="/appointments")
+router.include_router(router_especialidades, prefix="/api/v1")
 
 # 3. Rutas de Agenda Médica (CU05)
 router.include_router(agenda_router)
+router.include_router(agenda_router, prefix="/api/v1")
 
 # 3b. Fila virtual y tiempos de espera (CU08): /cola y /api/v1/cola
 router.include_router(live_queue_router)
@@ -28,5 +31,7 @@ router.include_router(live_queue_router, prefix="/api/v1")
 router.include_router(consultas_router, prefix="/appointments/consultas")
 router.include_router(consultas_router, prefix="/citas")
 router.include_router(consultas_router, prefix="/appointments/citas")
+router.include_router(consultas_router, prefix="/api/v1/citas")
+
 
 
