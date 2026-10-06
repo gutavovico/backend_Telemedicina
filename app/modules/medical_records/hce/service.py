@@ -108,7 +108,7 @@ def get_consulta_by_id(
         )
 
     # Si el usuario es PACIENTE, verificar que sea el dueño de la historia clínica
-    rol_nombre = current_user.rol.nombre.upper() if current_user.rol else ""
+    rol_nombre = (current_user.rol or "").upper()
     if rol_nombre == "PACIENTE" or current_user.id_rol == 4:
         perfil_paciente = get_patient_by_user_id(db, current_user.id_usuario, tenant_id=tenant_id)
         if not perfil_paciente or consulta.historia.id_paciente != perfil_paciente.id_paciente:

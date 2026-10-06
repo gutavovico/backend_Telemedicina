@@ -85,12 +85,14 @@ def formatear_cita_response(cita: Cita) -> CitaResponse:
     )
 
 
-def crear_cita(db: Session, datos: CitaCreate) -> CitaResponse:
-    paciente = db.query(Paciente).filter(Paciente.id_paciente == datos.id_paciente).first()
+def crear_cita(db: Session, datos: CitaCreate, tenant_id: int) -> CitaResponse:
+    paciente = db.query(Paciente).filter(Paciente.id_paciente == datos.id_paciente, Paciente.id_clinica == tenant_id).first()
     if not paciente:
         raise ValueError(f"El paciente con ID {datos.id_paciente} no existe")
 
-    medico = db.query(Medico).filter(Medico.id_medico == datos.id_medico).first()
+    medico = db.query(Medico).join(Usuario, Medico.id_usuario == Usuario.id_usuario).filter(
+        Medico.id_medico == datos.id_medico, Usuario.id_clinica == tenant_id
+    ).first()
     if not medico:
         raise ValueError(f"El médico con ID {datos.id_medico} no existe")
 
@@ -117,6 +119,7 @@ def crear_cita(db: Session, datos: CitaCreate) -> CitaResponse:
         pass
 
     nueva_cita = Cita(
+        id_clinica=tenant_id,
         id_paciente=datos.id_paciente,
         id_medico=datos.id_medico,
         id_especialidad=datos.id_especialidad,
@@ -151,6 +154,7 @@ def obtener_cita_por_id(db: Session, id_cita: int) -> Optional[Cita]:
 
 def listar_citas(
     db: Session,
+    tenant_id: int,
     q: Optional[str] = None,
     fecha: Optional[date] = None,
     estado: Optional[str] = None,
@@ -163,13 +167,18 @@ def listar_citas(
         db.query(Cita)
         .join(Paciente, Cita.id_paciente == Paciente.id_paciente)
         .join(Medico, Cita.id_medico == Medico.id_medico)
-        .outerjoin(Usuario, Medico.id_usuario == Usuario.id_usuario)
+        .join(Usuario, Medico.id_usuario == Usuario.id_usuario)
         .outerjoin(Especialidad, Cita.id_especialidad == Especialidad.id_especialidad)
         .options(
             joinedload(Cita.paciente),
             joinedload(Cita.medico).joinedload(Medico.usuario),
             joinedload(Cita.especialidad),
         )
+    )
+    query = query.filter(
+        Paciente.id_clinica == tenant_id,
+        Usuario.id_clinica == tenant_id,
+        or_(Cita.id_clinica == tenant_id, Cita.id_clinica.is_(None)),
     )
 
     if q and q.strip():
