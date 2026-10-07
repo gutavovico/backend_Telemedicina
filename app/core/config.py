@@ -65,8 +65,8 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = "http://localhost:4200,https://frontend-telemedicina-weld.vercel.app"
 
-    # Almacenamiento de documentos (CU12)
-    STORAGE_BACKEND: str = "local"  # local | minio
+    # Almacenamiento de documentos (CU12) y recetas (CU16)
+    STORAGE_BACKEND: str = "local"  # local | minio | r2 | s3
     STORAGE_LOCAL_DIR: str = "storage_documents"
     STORAGE_PUBLIC_BASE_URL: str = "http://localhost:8000"
     # MinIO (S3-compatible)
@@ -99,19 +99,6 @@ class Settings(BaseSettings):
     GROQ_MAX_OUTPUT_TOKENS: int = 1000
     GROQ_TRANSCRIPTION_MODEL: str = "whisper-large-v3"
     GROQ_TRANSCRIPTION_TIMEOUT_SECONDS: float = 30.0
-
-    # Almacenamiento de documentos (CU12)
-    STORAGE_BACKEND: str = "local"  # local | minio
-    STORAGE_LOCAL_DIR: str = "storage_documents"
-    STORAGE_PUBLIC_BASE_URL: str = "http://localhost:8000"
-    # MinIO (S3-compatible)
-    MINIO_ENDPOINT: str = "localhost:9000"
-    MINIO_ACCESS_KEY: str = ""
-    MINIO_SECRET_KEY: str = ""
-    MINIO_BUCKET: str = "telemedicina-documentos"
-    MINIO_SECURE: bool = False
-    # Expiración de URL firmada en segundos (máximo 900)
-    DOCUMENTO_URL_EXPIRACION: int = 900
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[2] / ".env",
