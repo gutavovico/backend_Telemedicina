@@ -24,7 +24,7 @@ python-dotenv>=1.0.0
 pydantic-settings>=2.2.0
 email-validator>=2.0.0
 
-# Almacenamiento S3-compatible (MinIO) para documentos clínicos (CU12)
+# Almacenamiento S3-compatible (MinIO, Cloudflare R2, S3) para documentos y recetas
 boto3>=1.34.0
 
 # Seguridad, JWT & Hashing

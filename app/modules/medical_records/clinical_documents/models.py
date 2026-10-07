@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     func,
@@ -22,7 +23,7 @@ class DocumentoClinico(Base):
 
     __tablename__ = "documentos_clinicos"
 
-    id_documento = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
+    id_documento = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
     id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=False, index=True)
     # Sin ForeignKey: la tabla `pacientes` no tiene modelo ORM (modulo patient_profile
     # archivado) y el esquema desplegado no declara la restriccion. El aislamiento por
