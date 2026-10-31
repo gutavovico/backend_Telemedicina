@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, func, DateTime, Boolean, ForeignKey
+from sqlalchemy import Column, BigInteger, Integer, String, func, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -59,6 +59,17 @@ class Rol(Base):
     rol_permisos = relationship("RolPermiso", back_populates="rol", cascade="all, delete-orphan")
     permisos = relationship("Permiso", secondary="rol_permisos", back_populates="roles", viewonly=True)
 
+    def __eq__(self, other):
+        if isinstance(other, str):
+            return self.nombre == other
+        return super().__eq__(other)
+
+    def __hash__(self):
+        return super().__hash__()
+
+    def __str__(self) -> str:
+        return self.nombre
+
     def __repr__(self) -> str:
         return f"<Rol(id={self.id_rol}, nombre='{self.nombre}', estado='{self.estado}')>"
 
@@ -67,7 +78,7 @@ class Usuario(Base):
     __tablename__ = "usuarios"
     id_usuario = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
     id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=False)
-    id_rol = Column(BigInteger, ForeignKey("roles.id_rol"), nullable=False)
+    id_rol = Column(BigInteger, ForeignKey("roles.id_rol"), nullable=True)
     nombres = Column(String(100), nullable=False)
     apellidos = Column(String(100), nullable=False)
     correo = Column(String(150), unique=True, nullable=False, index=True)
@@ -85,16 +96,12 @@ class Usuario(Base):
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     fecha_actualizacion = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    rol_rel = relationship("Rol", foreign_keys=[id_rol], lazy="joined")
+    rol = relationship("Rol", foreign_keys=[id_rol], lazy="joined")
 
     @property
-    def rol(self):
-        """Nombre del rol (ADMIN, MEDICO, RECEPCION, PACIENTE).
-
-        Lo consumen los guards por rol del frontend Angular y Flutter, que de otro
-        modo recibirian `rol` siempre nulo y negarian el acceso.
-        """
-        return self.rol_rel.nombre if self.rol_rel else None
+    def rol_rel(self):
+        """Alias para compatibilidad con código que use rol_rel."""
+        return self.rol
 
     @property
     def tenant_id(self):
@@ -162,7 +169,12 @@ class TokenBlacklist(Base):
 class Auditoria(Base):
     __tablename__ = "auditoria"
 
-    id_auditoria = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
+    id_auditoria = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+        index=True,
+    )
     id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=False)
     id_usuario = Column(BigInteger, ForeignKey("usuarios.id_usuario"), nullable=False)
     tabla_afectada = Column(String(150), nullable=True)

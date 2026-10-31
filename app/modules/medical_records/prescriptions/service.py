@@ -131,8 +131,7 @@ def _q_paciente(db: Session):
 
 
 def _q_documento(db: Session):
-    return db.query(DocumentoClinico).options(
-        lazyload(DocumentoClinico.paciente), lazyload(DocumentoClinico.firmante))
+    return db.query(DocumentoClinico).options(lazyload(DocumentoClinico.firmante))
 
 
 def _is_transient(exc: BaseException) -> bool:

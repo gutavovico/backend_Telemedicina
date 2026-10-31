@@ -78,14 +78,14 @@ def get_tenant_context(
     permisos: List[str] = []
     user_with_perms = (
         db.query(Usuario)
-        .options(joinedload(Usuario.rol))
+        .options(joinedload(Usuario.rol_rel))
         .filter(Usuario.id_usuario == current_user.id_usuario)
         .first()
     )
     rol_nombre = ""
-    if user_with_perms and user_with_perms.rol:
-        rol_nombre = user_with_perms.rol.nombre
-        for p in user_with_perms.rol.permisos:
+    if user_with_perms and user_with_perms.rol_rel:
+        rol_nombre = user_with_perms.rol_rel.nombre
+        for p in user_with_perms.rol_rel.permisos:
             if p.estado and p.estado.upper() != "ACTIVO":
                 continue
             if p.nombre and p.nombre not in permisos:

@@ -24,6 +24,23 @@ class StorageError(Exception):
     """Error genérico del servicio de almacenamiento."""
 
 
+def _sanitize_key(key: str) -> str:
+    if not key or not key.strip():
+        raise StorageError("Clave de archivo vacía")
+    cleaned = key.strip()
+    if cleaned.startswith("/"):
+        cleaned = cleaned[1:]
+    if (
+        cleaned.startswith("api/")
+        or cleaned.startswith("http://")
+        or cleaned.startswith("https://")
+        or "\\" in cleaned
+        or ".." in cleaned
+    ):
+        raise StorageError(f"Ruta de archivo no permitida: {key}")
+    return cleaned
+
+
 class DocumentStorage:
     """Abstracción de almacenamiento de archivos para documentos clínicos."""
 
@@ -75,7 +92,8 @@ class DocumentStorage:
                 ContentType=content_type,
             )
         else:
-            dest = self.local_dir / key
+            base_dir = self.local_dir.resolve()
+            dest = base_dir / key
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(content)
         return key, sha
@@ -105,10 +123,30 @@ class DocumentStorage:
             resp = self._minio_client.get_object(Bucket=settings.MINIO_BUCKET, Key=key)
             return resp["Body"].read()
 
-        file_path = (self.local_dir / Path(key)).resolve()
-        if not str(file_path).startswith(str(self.local_dir)) or not file_path.is_file():
+        base_dir = self.local_dir.resolve()
+        file_path = (base_dir / Path(key)).resolve()
+        if not file_path.is_relative_to(base_dir) or not file_path.is_file():
             return None
         return file_path.read_bytes()
+
+    def delete(self, key: str) -> bool:
+        """Elimina un archivo almacenado (usado para compensación transaccional)."""
+        if self.backend == "minio":
+            try:
+                self._minio_client.delete_object(Bucket=settings.MINIO_BUCKET, Key=key)
+                return True
+            except Exception:
+                return False
+
+        base_dir = self.local_dir.resolve()
+        file_path = (base_dir / Path(key)).resolve()
+        if not file_path.is_relative_to(base_dir) or not file_path.is_file():
+            return False
+        try:
+            file_path.unlink()
+            return True
+        except Exception:
+            return False
 
 
 storage = DocumentStorage()

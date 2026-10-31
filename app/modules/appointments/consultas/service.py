@@ -156,6 +156,7 @@ def listar_citas(
     estado: Optional[str] = None,
     id_medico: Optional[int] = None,
     id_paciente: Optional[int] = None,
+    tipo_consulta: Optional[str] = None,
     page: int = 1,
     page_size: int = 20,
 ) -> CitaListResponse:
@@ -197,6 +198,10 @@ def listar_citas(
 
     if id_paciente:
         query = query.filter(Cita.id_paciente == id_paciente)
+
+    if tipo_consulta and tipo_consulta.strip() and tipo_consulta.upper() != 'TODOS':
+        tipo = tipo_consulta.strip().upper()
+        query = query.filter(or_(Cita.tipo_consulta == tipo, Cita.modalidad == tipo))
 
     total = query.count()
     offset = (page - 1) * page_size
