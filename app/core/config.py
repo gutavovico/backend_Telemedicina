@@ -92,6 +92,31 @@ class Settings(BaseSettings):
     # Ejemplo: "10.0.0.1, 192.168.1.10". Ver CU16 decisión 5.
     TRUSTED_PROXY_IPS: str = ""
 
+    # ------------------------------------------------------------------ #
+    # CU19 - Pagos en línea de citas y teleconsultas (Stripe Sandbox)
+    # ------------------------------------------------------------------ #
+    # Si STRIPE_SECRET_KEY está vacía, la pasarela opera en modo simulado
+    # (útil para demo/pruebas sin credenciales). Con clave configurada se
+    # crean sesiones reales de Stripe Checkout en el entorno sandbox.
+    STRIPE_SECRET_KEY: SecretStr = SecretStr("")
+    STRIPE_PUBLISHABLE_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: SecretStr = SecretStr("")
+    STRIPE_API_BASE_URL: str = "https://api.stripe.com"
+    STRIPE_CURRENCY: str = "bob"
+    STRIPE_TIMEOUT_SECONDS: float = 20.0
+    STRIPE_WEBHOOK_TOLERANCE_SECONDS: int = 300
+    # Importe por defecto (BOB) cuando la cita no tiene un servicio con costo.
+    PAYMENT_DEFAULT_AMOUNT: str = "50.00"
+    # URL pública del backend, usada para el QR corto y el retorno móvil.
+    PAYMENT_PUBLIC_BASE_URL: str = "http://localhost:8000"
+    # Retorno del Checkout en web y móvil.
+    PAYMENT_WEB_SUCCESS_URL: str = "http://localhost:4200/pagos/resultado"
+    PAYMENT_WEB_CANCEL_URL: str = "http://localhost:4200/mis-citas"
+    PAYMENT_MOBILE_SUCCESS_URL: str = "http://localhost:8000/pagos/retorno?estado=exito"
+    PAYMENT_MOBILE_CANCEL_URL: str = "http://localhost:8000/pagos/retorno?estado=cancelado"
+    # Vigencia de la sesión de pago (minutos).
+    PAYMENT_SESSION_TTL_MINUTES: int = 30
+
     # CU22: interpretación de texto con Groq (nunca se envía al cliente).
     GROQ_API_KEY: SecretStr = SecretStr("")
     GROQ_MODEL: str = "openai/gpt-oss-20b"

@@ -11,6 +11,8 @@ from app.modules.medical_records.router import router as medical_records_router
 from app.modules.appointments.router import router as appointments_router
 from app.modules.analytics.router import router as analytics_router
 from app.modules.communications.router import router as communications_router
+from app.modules.payments.router import router as payments_router, pago_error_handler
+from app.modules.payments.service import PagoError
 from app.modules.medical_records.prescriptions.router import prescription_error_handler
 from app.modules.medical_records.prescriptions.service import PrescriptionError
 
@@ -64,8 +66,14 @@ app.include_router(analytics_router)
 app.include_router(communications_router)
 app.include_router(communications_router, prefix="/api/v1")
 
+# Pagos de citas y teleconsultas + comprobantes (CU19)
+app.include_router(payments_router)
+app.include_router(payments_router, prefix="/api/v1")
+
 # CU16: formato de error uniforme {"detail", "code"}
 app.add_exception_handler(PrescriptionError, prescription_error_handler)
+# CU19: errores de negocio de pagos con su código HTTP.
+app.add_exception_handler(PagoError, pago_error_handler)
 
 
 @app.get("/", tags=["General"], summary="Health Check")
