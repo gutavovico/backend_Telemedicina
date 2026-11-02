@@ -20,6 +20,7 @@ from app.modules.medical_records.prescriptions.models import (  # noqa: F401
     Medicamento, Receta, RecetaDetalle, ConfiguracionRecetas,
     SecuenciaRecetas, RecetaIdempotencia, RecetaValidacionIntento,
 )
+from app.modules.backup.models import BackupConfig  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

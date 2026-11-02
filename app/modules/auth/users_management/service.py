@@ -43,7 +43,7 @@ def _serialize_user(user: Usuario) -> dict[str, Any]:
 
 
 def list_users(db: Session, tenant_id: Optional[int] = None) -> list[dict[str, Any]]:
-    query = db.query(Usuario).options(joinedload(Usuario.rol))
+    query = db.query(Usuario).options(joinedload(Usuario.rol_rel))
     if tenant_id is not None:
         query = query.filter(Usuario.id_clinica == tenant_id)
     users = query.order_by(Usuario.id_usuario.asc()).all()
@@ -51,7 +51,7 @@ def list_users(db: Session, tenant_id: Optional[int] = None) -> list[dict[str, A
 
 
 def get_user_or_404(db: Session, id_usuario: int, tenant_id: Optional[int] = None) -> Usuario:
-    query = db.query(Usuario).options(joinedload(Usuario.rol)).filter(Usuario.id_usuario == id_usuario)
+    query = db.query(Usuario).options(joinedload(Usuario.rol_rel)).filter(Usuario.id_usuario == id_usuario)
     if tenant_id is not None:
         query = query.filter(Usuario.id_clinica == tenant_id)
     user = query.first()
@@ -103,7 +103,7 @@ def create_admin_user(db: Session, user_data: AdminUserCreate, current_tenant_id
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    db.refresh(new_user, attribute_names=["rol"])
+    db.refresh(new_user, attribute_names=["rol_rel"])
     return _serialize_user(new_user)
 
 
@@ -159,7 +159,7 @@ def update_admin_user(db: Session, id_usuario: int, user_data: AdminUserUpdate, 
     db.add(user)
     db.commit()
     db.refresh(user)
-    db.refresh(user, attribute_names=["rol"])
+    db.refresh(user, attribute_names=["rol_rel"])
     return _serialize_user(user)
 
 
@@ -169,7 +169,7 @@ def set_user_status(db: Session, id_usuario: int, activo: bool, current_tenant_i
     db.add(user)
     db.commit()
     db.refresh(user)
-    db.refresh(user, attribute_names=["rol"])
+    db.refresh(user, attribute_names=["rol_rel"])
     return _serialize_user(user)
 
 

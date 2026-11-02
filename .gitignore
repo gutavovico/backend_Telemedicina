@@ -42,3 +42,6 @@ storage_documents/
 # Archivos del Sistema Operativo
 .DS_Store
 Thumbs.db
+
+# Copias de seguridad locales (cambio backup-copias-seguridad)
+backups/
