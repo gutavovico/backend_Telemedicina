@@ -20,6 +20,8 @@ htmlcov/
 .env
 .env.*
 !.env.example
+.secrets/
+backups/
 
 # IDEs y Editores
 .vscode/
@@ -42,6 +44,3 @@ storage_documents/
 # Archivos del Sistema Operativo
 .DS_Store
 Thumbs.db
-
-# Copias de seguridad locales (cambio backup-copias-seguridad)
-backups/

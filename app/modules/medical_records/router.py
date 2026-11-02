@@ -12,6 +12,8 @@ from app.modules.medical_records.triage.router import router as triage_router
 from app.modules.medical_records.patient_profile.router import router as patient_profile_router
 from app.modules.medical_records.hce.router import router as hce_router
 from app.modules.medical_records.fichas.router import router as fichas_router
+from app.modules.medical_records.tratamientos.avisos_router import router as tratamientos_avisos_router
+from app.modules.medical_records.tratamientos.router import router as tratamientos_router
 
 router = APIRouter()
 
@@ -33,6 +35,10 @@ router.include_router(clinical_documents_pacientes_router)
 # CU16: Recetas Médicas Digitales
 router.include_router(prescriptions_router)
 router.include_router(medicamentos_router)
+
+# CU17: rutas literales de avisos antes de los identificadores de tratamiento.
+router.include_router(tratamientos_avisos_router)
+router.include_router(tratamientos_router)
 
 # CU13: Triaje Preliminar AI
 router.include_router(triage_router)
