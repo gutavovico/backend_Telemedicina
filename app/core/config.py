@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     DB_PASSWORD: str = "12345"
     DB_HOST: str = "localhost"
     DB_PORT: int = 5432
+    # SSL Neon (Local: dejar vacío; Neon: require). Se lee desde el .env.
+    DB_SSLMODE: str = ""
+    # Channel binding Neon (Local: dejar vacío; Neon: require). Se lee desde el .env.
+    DB_CHANNEL_BINDING: str = ""
 
     # JWT
     JWT_SECRET_KEY: str = "clave_secreta_super_segura_telemedicina_2026_jwt_access"
@@ -65,6 +69,10 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = "http://localhost:4200,https://frontend-telemedicina-weld.vercel.app"
 
+    # Copias de seguridad (cambio backup-copias-seguridad).
+    # Carpeta propia del backend; NO usar storage_documents (CU12).
+    BACKUP_DIR: str = "backups"
+
     # Almacenamiento de documentos (CU12) y recetas (CU16)
     STORAGE_BACKEND: str = "local"  # local | minio | r2 | s3
     STORAGE_LOCAL_DIR: str = "storage_documents"
@@ -108,7 +116,19 @@ class Settings(BaseSettings):
 
     @property
     def DATABASE_URL(self) -> str:
-        return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        # ORIGINAL LOCAL (descomentar para restaurar localhost):
+        #return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        # NEON FIJA (comentada para conservar historial):
+        #return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?sslmode=require&channel_binding=require"
+        # DINÁMICA (activa: usa DB_SSLMODE / DB_CHANNEL_BINDING del .env.
+        # Neon: require/require. Local: vacíos = sin ?sslmode):
+        base = f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        params = []
+        if self.DB_SSLMODE:
+            params.append(f"sslmode={self.DB_SSLMODE}")
+        if self.DB_CHANNEL_BINDING:
+            params.append(f"channel_binding={self.DB_CHANNEL_BINDING}")
+        return base + (("?" + "&".join(params)) if params else "")
 
     @property
     def cors_origins_list(self) -> List[str]:

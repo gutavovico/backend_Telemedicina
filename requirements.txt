@@ -52,3 +52,7 @@ reportlab==5.0.1
 pillow==12.3.0
 google-genai>=2.0.0
 
+
+# Copias de seguridad programadas (cambio backup-copias-seguridad)
+apscheduler>=3.10.0
+tzdata>=2023.0
