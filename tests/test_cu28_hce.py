@@ -133,7 +133,7 @@ class CU28HCETestCase(unittest.TestCase):
         def dependency(db: Session = Depends(get_db)):
             return (
                 db.query(Usuario)
-                .options(joinedload(Usuario.rol))
+                .options(joinedload(Usuario.rol_rel))
                 .filter(Usuario.id_usuario == user_id)
                 .first()
             )

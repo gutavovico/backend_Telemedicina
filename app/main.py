@@ -12,14 +12,16 @@ from app.modules.medical_records.router import router as medical_records_router
 from app.modules.appointments.router import router as appointments_router
 from app.modules.analytics.router import router as analytics_router
 from app.modules.communications.router import router as communications_router
-from app.modules.backup.router import router as backup_router
-from app.modules.backup import scheduler as backup_scheduler
 from app.modules.medical_records.prescriptions.router import prescription_error_handler
 from app.modules.medical_records.prescriptions.service import PrescriptionError
+from app.modules.medical_records.tratamientos.router import treatment_error_handler
+from app.modules.medical_records.tratamientos.service import TreatmentError
+from app.modules.backup.router import router as backup_router
+from app.modules.backup import scheduler as backup_scheduler
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Arranca/detiene el scheduler de backups (cambio backup-copias-seguridad)."""
     backup_scheduler.iniciar()
     yield
     backup_scheduler.detener()
@@ -74,12 +76,11 @@ app.include_router(analytics_router)
 # Teleconsulta y Chat en Tiempo Real (CU15)
 app.include_router(communications_router)
 app.include_router(communications_router, prefix="/api/v1")
-
-# Copias de seguridad manuales y programadas (backup-copias-seguridad)
 app.include_router(backup_router)
 
 # CU16: formato de error uniforme {"detail", "code"}
 app.add_exception_handler(PrescriptionError, prescription_error_handler)
+app.add_exception_handler(TreatmentError, treatment_error_handler)
 
 
 @app.get("/", tags=["General"], summary="Health Check")

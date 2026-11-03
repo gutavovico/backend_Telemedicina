@@ -50,7 +50,7 @@ class CU21AuditoriaTestCase(unittest.TestCase):
         def _get_user():
             db = self.SessionLocal()
             try:
-                u = db.query(Usuario).options(joinedload(Usuario.rol)).filter(Usuario.id_usuario == user_id).first()
+                u = db.query(Usuario).options(joinedload(Usuario.rol_rel)).filter(Usuario.id_usuario == user_id).first()
                 if u:
                     db.expunge_all()
                 return u

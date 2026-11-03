@@ -11,9 +11,7 @@ class Settings(BaseSettings):
     DB_PASSWORD: str = "12345"
     DB_HOST: str = "localhost"
     DB_PORT: int = 5432
-    # SSL Neon (Local: dejar vacío; Neon: require). Se lee desde el .env.
     DB_SSLMODE: str = ""
-    # Channel binding Neon (Local: dejar vacío; Neon: require). Se lee desde el .env.
     DB_CHANNEL_BINDING: str = ""
 
     # JWT
@@ -69,8 +67,6 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = "http://localhost:4200,https://frontend-telemedicina-weld.vercel.app"
 
-    # Copias de seguridad (cambio backup-copias-seguridad).
-    # Carpeta propia del backend; NO usar storage_documents (CU12).
     BACKUP_DIR: str = "backups"
 
     # Almacenamiento de documentos (CU12) y recetas (CU16)
@@ -108,6 +104,12 @@ class Settings(BaseSettings):
     GROQ_TRANSCRIPTION_MODEL: str = "whisper-large-v3"
     GROQ_TRANSCRIPTION_TIMEOUT_SECONDS: float = 30.0
 
+    # CU17: credenciales fuera del repositorio; valores vacíos desactivan push.
+    CU17_FCM_PROJECT_ID: str = ""
+    CU17_FCM_SERVICE_ACCOUNT_FILE: str = ""
+    CU17_DEVICE_TOKEN_KEY: SecretStr = SecretStr("")
+    CU17_SYSTEM_USER_IDS_JSON: str = "{}"
+
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[2] / ".env",
         env_file_encoding="utf-8",
@@ -116,12 +118,6 @@ class Settings(BaseSettings):
 
     @property
     def DATABASE_URL(self) -> str:
-        # ORIGINAL LOCAL (descomentar para restaurar localhost):
-        #return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
-        # NEON FIJA (comentada para conservar historial):
-        #return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?sslmode=require&channel_binding=require"
-        # DINÁMICA (activa: usa DB_SSLMODE / DB_CHANNEL_BINDING del .env.
-        # Neon: require/require. Local: vacíos = sin ?sslmode):
         base = f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
         params = []
         if self.DB_SSLMODE:

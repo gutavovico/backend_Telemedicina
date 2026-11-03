@@ -52,7 +52,8 @@ reportlab==5.0.1
 pillow==12.3.0
 google-genai>=2.0.0
 
-
-# Copias de seguridad programadas (cambio backup-copias-seguridad)
+# CU17: autenticación de servicio y transporte FCM HTTP v1.
+google-auth>=2.0.0
+requests>=2.28.0
+tzdata>=2024.1
 apscheduler>=3.10.0
-tzdata>=2023.0

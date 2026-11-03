@@ -20,6 +20,12 @@ from app.modules.medical_records.prescriptions.models import (  # noqa: F401
     Medicamento, Receta, RecetaDetalle, ConfiguracionRecetas,
     SecuenciaRecetas, RecetaIdempotencia, RecetaValidacionIntento,
 )
+from app.modules.medical_records.tratamientos.models import (  # noqa: F401
+    Tratamiento, TratamientoMedicamento, TratamientoDosis, TratamientoEvento,
+)
+from app.modules.medical_records.tratamientos.avisos_models import (  # noqa: F401
+    TratamientoAviso, TratamientoDispositivo, TratamientoEntregaPush, TratamientoCursor,
+)
 from app.modules.backup.models import BackupConfig  # noqa: F401
 
 # this is the Alembic Config object, which provides
