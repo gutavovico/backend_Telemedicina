@@ -20,8 +20,17 @@ router = APIRouter(tags=["Fichas Médicas"])
 
 
 def _rol_nombre(current_user: Usuario) -> str:
+    # `Usuario.rol` es str (property), no objeto: soportar ambos.
     rol = getattr(current_user, "rol", None)
-    nombre = getattr(rol, "nombre", None) if rol else None
+    if isinstance(rol, str):
+        nombre = rol
+    elif rol is not None:
+        nombre = getattr(rol, "nombre", None)
+    else:
+        nombre = None
+    if not nombre:
+        rel = getattr(current_user, "rol_rel", None)
+        nombre = getattr(rel, "nombre", None) if rel is not None else None
     return (nombre or "").strip().upper()
 
 

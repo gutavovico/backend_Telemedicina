@@ -152,6 +152,23 @@ class CU12ClinicalDocumentsTestCase(unittest.TestCase):
                 )
             """)
             conn.exec_driver_sql("""
+                CREATE TABLE ordenes_laboratorio (
+                    id_orden INTEGER PRIMARY KEY,
+                    id_clinica INTEGER NOT NULL,
+                    id_paciente INTEGER NOT NULL,
+                    id_cita INTEGER,
+                    id_medico INTEGER NOT NULL,
+                    examenes TEXT NOT NULL DEFAULT '[]',
+                    firma_digital TEXT,
+                    fecha_orden DATE NOT NULL DEFAULT '2026-09-01',
+                    archivo_url TEXT,
+                    hash_archivo TEXT,
+                    estado TEXT NOT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.exec_driver_sql("""
                 CREATE TABLE auditoria (
                     id_auditoria INTEGER PRIMARY KEY AUTOINCREMENT,
                     id_clinica INTEGER NOT NULL,
@@ -513,6 +530,12 @@ class CU12ClinicalDocumentsTestCase(unittest.TestCase):
         key, sha = storage_module.storage.store("mock-doc.pdf", content)
         self.assertEqual(key.startswith("documentos/"), True)
         self.assertEqual(len(sha), 64)
+        with self.engine.begin() as conn:
+            conn.exec_driver_sql(
+                "INSERT INTO documentos_clinicos (id_clinica, id_paciente, tipo_documento, titulo, archivo_url, hash_archivo, fecha_documento, estado) "
+                "VALUES (1, 1, 'RECETA', 'Archivo de prueba', ?, ?, '2026-09-05', 'ACTIVO')",
+                (key, sha),
+            )
 
         self._override_current_user(1)
         url = f"/api/v1/documentos/file/{key}?nombre=mock-doc.pdf"
@@ -534,6 +557,16 @@ class CU12ClinicalDocumentsTestCase(unittest.TestCase):
     def test_file_endpoint_404_sin_archivo(self):
         self._override_current_user(1)
         response = self.client.get("/api/v1/documentos/file/documentos/zz/no-existe.pdf")
+        self.assertEqual(response.status_code, 404)
+
+    def test_file_endpoint_no_expone_documentos_de_otro_paciente(self):
+        self._override_current_user(4)
+        response = self.client.get("/api/v1/documentos/file/documentos/1/receta-ana.pdf")
+        self.assertEqual(response.status_code, 404)
+
+    def test_file_endpoint_no_expone_documentos_de_otro_tenant(self):
+        self._override_current_user(1)
+        response = self.client.get("/api/v1/documentos/4/file")
         self.assertEqual(response.status_code, 404)
 
 

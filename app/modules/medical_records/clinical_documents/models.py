@@ -7,6 +7,8 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
+    JSON,
     String,
     Text,
     func,
@@ -22,7 +24,7 @@ class DocumentoClinico(Base):
 
     __tablename__ = "documentos_clinicos"
 
-    id_documento = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
+    id_documento = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
     id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=False, index=True)
     # Sin ForeignKey: la tabla `pacientes` no tiene modelo ORM (modulo patient_profile
     # archivado) y el esquema desplegado no declara la restriccion. El aislamiento por
@@ -36,7 +38,7 @@ class DocumentoClinico(Base):
     hash_archivo = Column(String(64), nullable=False)
     firmado_por = Column(BigInteger, ForeignKey("usuarios.id_usuario"), nullable=True)
     fecha_documento = Column(Date, nullable=False, index=True)
-    metadatos = Column(JSONB, nullable=True)
+    metadatos = Column(JSONB().with_variant(JSON(), "sqlite"), nullable=True)
     estado = Column(String(20), nullable=False, default="ACTIVO")  # ACTIVO, ANULADO
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

@@ -268,14 +268,64 @@ def serve_local_file_endpoint(
     archivo_path: str,
     nombre: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_document_permission(PERMISO_DOWNLOAD)),
+    current_user: Usuario = Depends(get_current_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
+    docs = db.query(DocumentoClinico).filter(
+        DocumentoClinico.archivo_url == archivo_path,
+        DocumentoClinico.id_clinica == tenant_id,
+        DocumentoClinico.estado == "ACTIVO",
+    ).all()
+    if docs:
+        from app.modules.medical_records.clinical_documents.dependencies import user_has_permission
+        if not user_has_permission(db, current_user.id_rol, PERMISO_DOWNLOAD):
+            raise HTTPException(status_code=403, detail="Permiso denegado para descargar documentos")
+        from app.modules.medical_records.clinical_documents.dependencies import user_can_read_document_type
+        if not any(
+            service.get_document_or_404(db, doc.id_documento, current_user, tenant_id)
+            and user_can_read_document_type(db, current_user.id_rol, doc.tipo_documento)
+            for doc in docs
+        ):
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    else:
+        # Las órdenes firmadas antiguas pueden tener PDF sin documento clínico asociado.
+        from app.modules.medical_records.laboratory_orders.models import OrdenLaboratorio
+        from app.modules.medical_records.laboratory_orders.dependencies import (
+            PERMISO_DOWNLOAD as LAB_DOWNLOAD,
+            user_can_access_lab_order,
+            user_has_permission as has_lab_permission,
+        )
+        orden = db.query(OrdenLaboratorio).filter(
+            OrdenLaboratorio.archivo_url == archivo_path,
+            OrdenLaboratorio.id_clinica == tenant_id,
+            OrdenLaboratorio.estado == "FIRMADA",
+        ).first()
+        if not orden or not has_lab_permission(db, current_user.id_rol, LAB_DOWNLOAD) or not user_can_access_lab_order(db, current_user, orden):
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
     content = storage.read(archivo_path)
-    if not content:
+    if content is None:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
     return Response(content=content, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{nombre or "documento.pdf"}"'})
+
+
+@router.get("/{id_documento}/file", include_in_schema=False)
+def serve_document_file_endpoint(
+    id_documento: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_document_permission(PERMISO_DOWNLOAD)),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    doc = service.get_document_or_404(db, id_documento, current_user, tenant_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    from app.modules.medical_records.clinical_documents.dependencies import user_can_read_document_type
+    if not user_can_read_document_type(db, current_user.id_rol, doc.tipo_documento):
+        raise HTTPException(status_code=403, detail="Permiso denegado para este documento")
+    content = storage.read(doc.archivo_url)
+    if content is None:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    return Response(content=content, media_type="application/pdf")
 
 
 @router.post(

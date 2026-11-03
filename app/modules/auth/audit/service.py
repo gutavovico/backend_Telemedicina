@@ -66,16 +66,18 @@ def registrar_evento(
     sanitized_ant = sanitize_payload(datos_anteriores) if datos_anteriores else None
     sanitized_nue = sanitize_payload(datos_nuevos) if datos_nuevos else None
 
-    str_ant = (
-        json.dumps(sanitized_ant, ensure_ascii=False)
-        if isinstance(sanitized_ant, (dict, list))
-        else (str(sanitized_ant) if sanitized_ant is not None else None)
-    )
-    str_nue = (
-        json.dumps(sanitized_nue, ensure_ascii=False)
-        if isinstance(sanitized_nue, (dict, list))
-        else (str(sanitized_nue) if sanitized_nue is not None else None)
-    )
+    def _to_jsonb(value: Optional[Any]) -> Optional[Any]:
+        # JSONB nativo: dict/list tal cual; str JSON se parsea; resto se guarda como texto.
+        if value is None:
+            return None
+        if isinstance(value, (dict, list)):
+            return value
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except Exception:
+                return value
+        return str(value)
 
     evento = Auditoria(
         id_clinica=id_clinica,
@@ -84,8 +86,8 @@ def registrar_evento(
         registro_id=registro_id,
         accion=accion.upper(),
         descripcion=descripcion,
-        datos_anteriores=str_ant,
-        datos_nuevos=str_nue,
+        datos_anteriores=_to_jsonb(sanitized_ant),
+        datos_nuevos=_to_jsonb(sanitized_nue),
         direccion_ip=direccion_ip,
         fecha_hora=datetime.now(),
     )
@@ -153,6 +155,8 @@ def _map_row_to_entry(auditoria: Auditoria, usuario: Optional[Usuario]) -> Audit
             datos_ant = json.loads(datos_ant)
         except Exception:
             pass
+    elif datos_ant is not None and not isinstance(datos_ant, (dict, list)):
+        datos_ant = str(datos_ant)
 
     datos_nue = auditoria.datos_nuevos
     if isinstance(datos_nue, str):
@@ -160,6 +164,8 @@ def _map_row_to_entry(auditoria: Auditoria, usuario: Optional[Usuario]) -> Audit
             datos_nue = json.loads(datos_nue)
         except Exception:
             pass
+    elif datos_nue is not None and not isinstance(datos_nue, (dict, list)):
+        datos_nue = str(datos_nue)
 
     return AuditLogEntry(
         id_auditoria=auditoria.id_auditoria,

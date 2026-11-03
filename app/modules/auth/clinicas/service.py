@@ -99,8 +99,14 @@ def update_clinica_estado(
 
 def registrar_clinica(
     db: Session, data: ClinicaRegistroRequest
-) -> Tuple[Clinica, Usuario]:
-    """Onboarding público: registra clínica + rol y cuenta de admin inicial."""
+) -> dict:
+    """Onboarding público: registra clínica + rol y cuenta de admin inicial.
+
+    Retorna escalares planos (no objetos ORM): la respuesta se construye con
+    valores capturados ANTES del commit, así un fallo post-commit (refresh /
+    serialización con sesión expirada) nunca enmascara una creación exitosa
+    como un 500.
+    """
     existing_user = db.query(Usuario).filter(Usuario.correo == data.admin_email).first()
     if existing_user:
         raise HTTPException(
@@ -147,11 +153,21 @@ def registrar_clinica(
             estado="ACTIVO",
         )
         db.add(admin_usuario)
-        db.commit()
+        db.flush()
         db.refresh(nueva_clinica)
         db.refresh(admin_usuario)
 
-        return nueva_clinica, admin_usuario
+        # Capturar escalares ANTES del commit (la sesión expira los ORM).
+        resultado = {
+            "id_clinica": int(nueva_clinica.id_clinica),
+            "nombre": nueva_clinica.nombre,
+            "estado": nueva_clinica.estado,
+            "id_usuario": int(admin_usuario.id_usuario),
+            "correo": admin_usuario.correo,
+        }
+        db.commit()
+
+        return resultado
     except HTTPException:
         db.rollback()
         raise

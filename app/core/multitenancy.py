@@ -32,6 +32,37 @@ ADMIN_ROLE_NAMES = {
 }
 
 
+def _rol_nombre(user: Usuario) -> str:
+    """Nombre del rol soportando `Usuario.rol` str (property) u objeto con `.nombre`."""
+    try:
+        r = getattr(user, "rol", None)
+        if isinstance(r, str) and r.strip():
+            return r.strip().upper()
+        if r is not None:
+            n = getattr(r, "nombre", None)
+            if n:
+                return str(n).strip().upper()
+        rel = getattr(user, "rol_rel", None)
+        if rel is not None:
+            n = getattr(rel, "nombre", None)
+            if n:
+                return str(n).strip().upper()
+    except Exception:
+        pass
+    return ""
+
+
+def _rol_id_clinica(user: Usuario):
+    """`id_clinica` del rol (None = global). Se lee del objeto, nunca del str."""
+    try:
+        for obj in (getattr(user, "rol_rel", None), getattr(user, "rol", None)):
+            if obj is not None and not isinstance(obj, str):
+                return getattr(obj, "id_clinica", None)
+    except Exception:
+        pass
+    return None
+
+
 def is_super_admin(user: Usuario) -> bool:
     """Indica si el usuario es Super Administrador de plataforma.
 
@@ -42,47 +73,34 @@ def is_super_admin(user: Usuario) -> bool:
     """
     if user is None:
         return False
-    try:
-        rol = getattr(user, "rol", None)
-        if rol and getattr(rol, "nombre", None):
-            rol_name = rol.nombre.strip().upper()
-            if "SUPER" in rol_name or rol_name in {
-                "SUPER ADMINISTRADOR",
-                "SUPER_ADMINISTRADOR",
-                "SUPER_ADMIN",
-                "SUPERADMIN",
-            }:
-                # Incluso el rol SUPER debe ser global, no de un tenant.
-                if getattr(rol, "id_clinica", None) is None:
-                    return True
-                return False
-    except Exception:
-        pass
+    rol_name = _rol_nombre(user)
+    rol_clinica = _rol_id_clinica(user)
+    # Rol SUPER global (seed: "Super Administrador", id_clinica=None) + sin clínica.
+    if "SUPER" in rol_name or rol_name in {
+        "SUPER ADMINISTRADOR",
+        "SUPER_ADMINISTRADOR",
+        "SUPER_ADMIN",
+        "SUPERADMIN",
+    }:
+        # Incluso el rol SUPER debe ser global, no de un tenant.
+        if rol_clinica is None and user.id_clinica is None:
+            return True
+        return False
 
     if user.id_clinica is None:
         if user.id_rol == 1:
-            try:
-                rol = getattr(user, "rol", None)
-                # Si el rol 1 pertenece a un tenant, no es global.
-                if rol is not None and getattr(rol, "id_clinica", None) is not None:
-                    return False
-            except Exception:
-                pass
+            # Si el rol 1 pertenece a un tenant, no es global.
+            if rol_clinica is not None:
+                return False
             return True
-        try:
-            rol = getattr(user, "rol", None)
-            if rol and getattr(rol, "nombre", None):
-                if getattr(rol, "id_clinica", None) is not None:
-                    return False
-                rol_name = rol.nombre.strip().upper()
-                if (
-                    rol_name in ADMIN_ROLE_NAMES
-                    or rol_name.replace(" ", "_") in ADMIN_ROLE_NAMES
-                    or "ADMIN" in rol_name
-                ):
-                    return True
-        except Exception:
-            pass
+        if rol_clinica is not None:
+            return False
+        if (
+            rol_name in ADMIN_ROLE_NAMES
+            or rol_name.replace(" ", "_") in ADMIN_ROLE_NAMES
+            or "ADMIN" in rol_name
+        ):
+            return True
     return False
 
 

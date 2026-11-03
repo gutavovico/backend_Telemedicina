@@ -30,7 +30,17 @@ def hoy_agenda() -> date:
 
 
 def _rol(user: Usuario) -> str:
-    nombre = user.rol.nombre if user.rol else ""
+    # `Usuario.rol` es una property que devuelve str (nombre del rol), no el objeto Rol.
+    rol_val = getattr(user, "rol", None)
+    if isinstance(rol_val, str):
+        nombre = rol_val
+    elif rol_val is not None:
+        nombre = getattr(rol_val, "nombre", "") or ""
+    else:
+        nombre = ""
+    if not nombre:
+        rel = getattr(user, "rol_rel", None)
+        nombre = getattr(rel, "nombre", "") or "" if rel is not None else ""
     nombre = "".join(c for c in unicodedata.normalize("NFD", nombre.upper()) if not unicodedata.combining(c))
     if user.id_rol == 1 or nombre in ("ADMIN", "ADMINISTRADOR", "ADMINISTRACION"):
         return "ADMIN"
@@ -39,7 +49,9 @@ def _rol(user: Usuario) -> str:
 
 def _contexto(user: Usuario, tenant_id: int | None, roles=("MEDICO", "RECEPCION")) -> str:
     rol = _rol(user)
-    if rol not in roles or (user.rol and user.rol.estado.lower() != "activo"):
+    rol_rel = getattr(user, "rol_rel", None)
+    estado_rol = getattr(rol_rel, "estado", None) if rol_rel is not None else None
+    if rol not in roles or (isinstance(estado_rol, str) and estado_rol.lower() != "activo"):
         raise HTTPException(403, "No tienes permisos para esta operación de agenda")
     # Un header no concede acceso a una clínica a un usuario sin pertenencia.
     if user.id_clinica is None or tenant_id != user.id_clinica:

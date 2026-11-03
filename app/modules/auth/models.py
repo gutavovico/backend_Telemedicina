@@ -1,4 +1,5 @@
-from sqlalchemy import Column, BigInteger, Integer, String, func, DateTime, Boolean, ForeignKey
+from sqlalchemy import Column, BigInteger, Integer, String, func, DateTime, Boolean, ForeignKey, JSON
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -96,12 +97,16 @@ class Usuario(Base):
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     fecha_actualizacion = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    rol = relationship("Rol", foreign_keys=[id_rol], lazy="joined")
+    rol_rel = relationship("Rol", foreign_keys=[id_rol], lazy="joined")
 
     @property
-    def rol_rel(self):
-        """Alias para compatibilidad con código que use rol_rel."""
-        return self.rol
+    def rol(self):
+        """Nombre del rol (ADMIN, MEDICO, RECEPCION, PACIENTE).
+
+        Lo consumen los guards por rol del frontend Angular y Flutter, que de otro
+        modo recibirian `rol` siempre nulo y negarian el acceso.
+        """
+        return self.rol_rel.nombre if self.rol_rel else None
 
     @property
     def tenant_id(self):
@@ -181,8 +186,8 @@ class Auditoria(Base):
     registro_id = Column(BigInteger, nullable=True)
     accion = Column(String(50), nullable=False)
     descripcion = Column(String, nullable=True)
-    datos_anteriores = Column(String, nullable=True)
-    datos_nuevos = Column(String, nullable=True)
+    datos_anteriores = Column(JSONB().with_variant(JSON(), "sqlite"), nullable=True)
+    datos_nuevos = Column(JSONB().with_variant(JSON(), "sqlite"), nullable=True)
     direccion_ip = Column(String(45), nullable=True)
     fecha_hora = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

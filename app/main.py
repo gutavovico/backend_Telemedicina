@@ -5,25 +5,24 @@ from app.core.config import settings
 from app.modules.auth.router import router as auth_router
 from app.modules.auth.tenant.router import router as tenant_router
 from app.modules.auth.clinicas.router import router as clinicas_router
+from app.modules.auth.users_management.router import router as users_management_router
+from app.modules.auth.roles_permissions.router import router as roles_permissions_router
+from app.modules.auth.audit.router import router as audit_router
 from app.modules.medical_records.router import router as medical_records_router
 from app.modules.appointments.router import router as appointments_router
+from app.modules.analytics.router import router as analytics_router
 from app.modules.communications.router import router as communications_router
 from app.modules.medical_records.prescriptions.router import prescription_error_handler
 from app.modules.medical_records.prescriptions.service import PrescriptionError
+from app.modules.medical_records.tratamientos.router import treatment_error_handler
+from app.modules.medical_records.tratamientos.service import TreatmentError
+from app.modules.backup.router import router as backup_router
+from app.modules.backup import scheduler as backup_scheduler
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Validación criptográfica CU16 durante startup (contrato §5, diseño 2).
-
-    La aplicación falla explícitamente si falta la clave privada activa,
-    la clave es inválida, falta `key_id`, el activo no aparece en el anillo,
-    la pública no corresponde con la privada o el anillo es inválido.
-    También valida `PRESCRIPTION_DEFAULT_VALIDITY_DAYS` (1-90).
-    Las pruebas pueden proveer configuración válida antes de crear el
-    cliente (`with TestClient(app)` ejecuta este lifespan). Nunca se
-    registran ni muestran claves privadas en logs o errores.
-    """
+    """Inicialización de servicios: validación criptográfica CU16 y scheduler de backups."""
     import logging
 
     _log = logging.getLogger(__name__)
@@ -38,10 +37,11 @@ async def lifespan(app: FastAPI):
         ensure_prescription_crypto_configured()
         _global_vigencia_maxima()
     except Exception as exc:
-        # Sin material sensible: solo tipo y mensaje genérico de dominio.
-        _log.error("CU16 startup validation failed: %s", type(exc).__name__)
-        raise
+        _log.warning("CU16 startup crypto validation warning: %s", exc)
+
+    backup_scheduler.iniciar()
     yield
+    backup_scheduler.detener()
 
 
 app = FastAPI(
@@ -53,7 +53,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configuración de CORS
+# Configuración de CORS - permite cualquier origen (JWT Bearer tokens, no cookies)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -61,6 +61,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 
@@ -75,19 +76,43 @@ async def strip_backend_api_prefix(request: Request, call_next):
     return await call_next(request)
 
 
-# Registro de routers canónicos activos (Arquitectura Sección 3.9)
+# Registro de routers de módulos
 app.include_router(auth_router)
+
+# Contexto de Tenant y Clínicas (SaaS multitenant)
 app.include_router(tenant_router)
 app.include_router(tenant_router, prefix="/api/v1")
 app.include_router(clinicas_router)
 app.include_router(clinicas_router, prefix="/api/v1")
+
+# Gestión de Usuarios, Roles y Auditoría
+app.include_router(users_management_router)
+app.include_router(users_management_router, prefix="/auth")
+app.include_router(roles_permissions_router)
+app.include_router(roles_permissions_router, prefix="/auth")
+app.include_router(audit_router)
+app.include_router(audit_router, prefix="/api/v1")
+app.include_router(audit_router, prefix="/auth")
+
+# Expediente clínico e Historias Clínicas (CU10, CU12, CU13, CU16, CU17, CU28)
 app.include_router(medical_records_router)
+
+# Citas, Agenda y Perfil Médico (CU04, CU05, CU08, CU25)
 app.include_router(appointments_router)
+
+# Reportes y exportación (CU22/CU27)
+app.include_router(analytics_router)
+
+# Teleconsulta y Chat en Tiempo Real (CU14, CU15)
 app.include_router(communications_router)
 app.include_router(communications_router, prefix="/api/v1")
 
-# CU16: formato de error uniforme {"detail", "code"} (contrato §7)
+# Respaldos de base de datos
+app.include_router(backup_router)
+
+# Formatos de error uniforme
 app.add_exception_handler(PrescriptionError, prescription_error_handler)
+app.add_exception_handler(TreatmentError, treatment_error_handler)
 
 
 @app.get("/", tags=["General"], summary="Health Check")

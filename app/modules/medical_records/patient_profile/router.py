@@ -135,7 +135,17 @@ def get_patient_detail(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     # Paciente: solo su propio registro (CU28 criterio 8); staff: ADMIN/RECEPCION/MEDICO.
-    rol = (current_user.rol.nombre.strip().upper() if current_user.rol and current_user.rol.nombre else "")
+    # `Usuario.rol` es str (property), no objeto: soportar str, objeto con .nombre y `rol_rel`.
+    _rv = getattr(current_user, "rol", None)
+    if isinstance(_rv, str):
+        rol = _rv.strip().upper()
+    elif _rv is not None:
+        rol = ((getattr(_rv, "nombre", "") or "").strip().upper())
+    else:
+        rol = ""
+    if not rol:
+        _rel = getattr(current_user, "rol_rel", None)
+        rol = ((getattr(_rel, "nombre", "") or "").strip().upper()) if _rel is not None else ""
     if rol == "PACIENTE":
         propio = service.get_patient_by_user_id(db, current_user.id_usuario, tenant_id=tenant_id)
         if not propio or propio.id_paciente != id_paciente:

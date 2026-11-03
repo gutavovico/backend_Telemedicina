@@ -7,6 +7,8 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
+    JSON,
     String,
     Text,
     func,
@@ -21,7 +23,7 @@ class ExamenLaboratorio(Base):
 
     __tablename__ = "examenes_laboratorio"
 
-    id_examen = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
+    id_examen = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
     id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=False, index=True)
     codigo = Column(String(50), nullable=False, index=True)
     nombre = Column(String(200), nullable=False)
@@ -54,12 +56,12 @@ class OrdenLaboratorio(Base):
 
     __tablename__ = "ordenes_laboratorio"
 
-    id_orden = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
+    id_orden = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
     id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=False, index=True)
     id_paciente = Column(BigInteger, nullable=False, index=True)  # Sin FK a pacientes (tabla legacy)
     id_cita = Column(BigInteger, nullable=True)
     id_medico = Column(BigInteger, ForeignKey("usuarios.id_usuario"), nullable=False, index=True)
-    examenes = Column(JSONB, nullable=False)  # [{"codigo", "nombre", "indicaciones"}]
+    examenes = Column(JSONB().with_variant(JSON(), "sqlite"), nullable=False)  # [{"codigo", "nombre", "indicaciones"}]
     firma_digital = Column(String(64), nullable=True)  # HMAC-SHA256 hex
     fecha_orden = Column(Date, nullable=False, index=True)
     estado = Column(String(20), nullable=False, default="BORRADOR")  # BORRADOR, FIRMADA, ANULADA
