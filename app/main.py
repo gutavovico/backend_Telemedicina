@@ -18,6 +18,8 @@ from app.modules.medical_records.tratamientos.router import treatment_error_hand
 from app.modules.medical_records.tratamientos.service import TreatmentError
 from app.modules.backup.router import router as backup_router
 from app.modules.backup import scheduler as backup_scheduler
+from app.modules.auth.planes.router import router as planes_router, plan_error_handler
+from app.modules.auth.planes.service import PlanError
 
 
 @asynccontextmanager
@@ -77,6 +79,8 @@ app.include_router(analytics_router)
 app.include_router(communications_router)
 app.include_router(communications_router, prefix="/api/v1")
 app.include_router(backup_router)
+app.include_router(planes_router)
+app.add_exception_handler(PlanError, plan_error_handler)
 
 # CU16: formato de error uniforme {"detail", "code"}
 app.add_exception_handler(PrescriptionError, prescription_error_handler)
