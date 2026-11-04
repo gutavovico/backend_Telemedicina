@@ -6,7 +6,9 @@ from app.core.database import Base
 
 class Clinica(Base):
     __tablename__ = "clinicas"
-    id_clinica = Column(BigInteger, primary_key=True, autoincrement=True)
+    id_clinica = Column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
     nombre = Column(String(150), nullable=False)
     razon_social = Column(String(200), nullable=True)
     nit = Column(String(50), unique=True, nullable=True)
@@ -77,7 +79,12 @@ class Rol(Base):
 
 class Usuario(Base):
     __tablename__ = "usuarios"
-    id_usuario = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
+    id_usuario = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+        index=True,
+    )
     # La migración 001 ya permite NULL; d2e3f4a5b6c7 incorpora el rol global.
     id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=True)
     id_rol = Column(BigInteger, ForeignKey("roles.id_rol"), nullable=True)
@@ -131,7 +138,9 @@ class SesionActiva(Base):
 
     __tablename__ = "sesiones_activas"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
     jti = Column(String(64), nullable=False, unique=True, index=True)
     id_usuario = Column(BigInteger, ForeignKey("usuarios.id_usuario"), nullable=False)
     id_clinica = Column(BigInteger, nullable=True)
@@ -159,7 +168,9 @@ class TokenBlacklist(Base):
 
     __tablename__ = "token_blacklist"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
     token = Column(String(500), nullable=False, index=True)
     revocada_en = Column(
         "revoked_at",
