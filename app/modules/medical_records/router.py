@@ -27,6 +27,8 @@ router.include_router(hce_router)
 
 # CU09 - Fichas médicas (el frontend llama a /medical-records/fichas)
 router.include_router(fichas_router, prefix="/medical-records/fichas")
+# Alias público del contrato CU09 (`/fichas`); no se duplica en OpenAPI.
+router.include_router(fichas_router, prefix="/fichas", include_in_schema=False)
 
 # CU12 - Consultar Documentos Clinicos y Examenes
 router.include_router(clinical_documents_router)

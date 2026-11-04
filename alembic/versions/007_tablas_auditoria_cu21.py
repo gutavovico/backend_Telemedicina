@@ -25,7 +25,7 @@ def upgrade() -> None:
         op.create_table(
             'auditoria',
             sa.Column('id_auditoria', sa.BigInteger(), autoincrement=True, nullable=False),
-            sa.Column('id_clinica', sa.BigInteger(), nullable=False),
+            sa.Column('id_clinica', sa.BigInteger(), nullable=True),
             sa.Column('id_usuario', sa.BigInteger(), nullable=False),
             sa.Column('tabla_afectada', sa.String(length=150), nullable=True),
             sa.Column('registro_id', sa.BigInteger(), nullable=True),

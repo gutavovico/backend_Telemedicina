@@ -60,8 +60,9 @@ class CU08LiveQueueTestCase(unittest.TestCase):
                 foto_perfil TEXT, estado TEXT, fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""",
             "CREATE TABLE especialidades (id_especialidad INTEGER PRIMARY KEY, nombre TEXT, descripcion TEXT, estado TEXT)",
             "CREATE TABLE medico_especialidad (id_medico INTEGER, id_especialidad INTEGER, es_principal BOOLEAN)",
-            """CREATE TABLE servicios_medicos (id_servicio INTEGER PRIMARY KEY, nombre TEXT NOT NULL,
-                descripcion TEXT, hora_inicio TIME NOT NULL, hora_fin TIME NOT NULL,
+            """CREATE TABLE servicios_medicos (id_servicio INTEGER PRIMARY KEY, id_clinica INTEGER,
+                tenant_id TEXT, nombre TEXT NOT NULL, descripcion TEXT,
+                modalidad TEXT NOT NULL DEFAULT 'PRESENCIAL', hora_inicio TIME NOT NULL, hora_fin TIME NOT NULL,
                 duracion_minutos INTEGER NOT NULL, costo DECIMAL(10,2) NOT NULL, estado TEXT NOT NULL)""",
             """CREATE TABLE horarios_medicos (id_horario INTEGER PRIMARY KEY, id_medico INTEGER NOT NULL,
                 id_servicio INTEGER NOT NULL, dia_semana INTEGER NOT NULL, estado TEXT NOT NULL,
@@ -110,7 +111,8 @@ class CU08LiveQueueTestCase(unittest.TestCase):
                     {"id": uid, "clinic": clinic, "role": role, "email": f"u{uid}@test.local"})
             conn.exec_driver_sql("""INSERT INTO medicos (id_medico,id_usuario,id_clinica,matricula_profesional,estado)
                 VALUES (20,2,1,'M20','activo'), (50,5,2,'M50','activo')""")
-            conn.exec_driver_sql("""INSERT INTO servicios_medicos VALUES
+            conn.exec_driver_sql("""INSERT INTO servicios_medicos
+                (id_servicio,nombre,descripcion,hora_inicio,hora_fin,duracion_minutos,costo,estado) VALUES
                 (1,'Consulta general',NULL,'08:00:00','13:00:00',20,100,'activo')""")
             conn.exec_driver_sql(
                 "INSERT INTO horarios_medicos VALUES (1,20,1,6,'activo')")

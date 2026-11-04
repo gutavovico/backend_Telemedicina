@@ -185,8 +185,11 @@ class ServicioMedico(Base):
     __tablename__ = "servicios_medicos"
 
     id_servicio = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica", ondelete="CASCADE"), nullable=True, index=True)
+    tenant_id = Column(String(36), nullable=True, index=True)
     nombre = Column(String(100), nullable=False)
     descripcion = Column(Text, nullable=True)
+    modalidad = Column(String(20), nullable=False, default="PRESENCIAL", server_default="PRESENCIAL")
     hora_inicio = Column(Time, nullable=False)
     hora_fin = Column(Time, nullable=False)
     duracion_minutos = Column(Integer, nullable=False)

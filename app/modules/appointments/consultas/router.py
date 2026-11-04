@@ -32,6 +32,8 @@ def agendar_cita(
 ):
     try:
         return service.crear_cita(db, datos)
+    except HTTPException:
+        raise
     except ValueError as ve:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
