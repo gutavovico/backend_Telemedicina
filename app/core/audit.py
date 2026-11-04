@@ -24,7 +24,7 @@ def registrar_auditoria(
     db: Session,
     *,
     id_usuario: int,
-    id_clinica: int,
+    id_clinica: Optional[int],
     tabla_afectada: str,
     registro_id: Optional[int] = None,
     accion: str,

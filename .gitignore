@@ -1,6 +1,7 @@
 # Entornos Virtuales
 venv/
 .venv/
+.venv-cu34/
 env/
 ENV/
 env.bak/
