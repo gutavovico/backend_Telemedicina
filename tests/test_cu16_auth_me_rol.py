@@ -87,7 +87,7 @@ class CU16AuthMeRolTestCase(unittest.TestCase):
         try:
             user = (
                 db.query(Usuario)
-                .options(joinedload(Usuario.rol))
+                .options(joinedload(Usuario.rol_rel))
                 .filter(Usuario.id_usuario == user_id)
                 .first()
             )
@@ -95,7 +95,8 @@ class CU16AuthMeRolTestCase(unittest.TestCase):
             db.expunge(user)
             # Expulsar también el rol cargado para que la serialización no dependa de la sesión.
             try:
-                db.expunge(user.rol)
+                if getattr(user, "rol_rel", None) is not None:
+                    db.expunge(user.rol_rel)
             except Exception:
                 pass
         finally:

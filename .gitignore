@@ -1,6 +1,7 @@
 # Entornos Virtuales
 venv/
 .venv/
+.venv-cu34/
 env/
 ENV/
 env.bak/
@@ -20,6 +21,8 @@ htmlcov/
 .env
 .env.*
 !.env.example
+.secrets/
+backups/
 
 # IDEs y Editores
 .vscode/

@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Query, Request
 from sqlalchemy.orm import Session
+from typing import List, Optional
 from app.core.database import get_db
-from app.modules.auth.dependencies import get_current_user, get_required_tenant_id
+from app.modules.auth.dependencies import get_current_user, get_required_tenant_id, get_current_tenant_id
 from app.modules.auth.models import Usuario
 from app.modules.appointments.models import Cita
 from app.modules.communications import service
@@ -9,6 +10,12 @@ from app.modules.communications.schemas import (
     TeleconsultaViewDTO,
     ChatMessageDTO,
     SendChatMessageCommand,
+    PresenciaTeleconsultaDTO,
+    ActualizarPresenciaCommand,
+    MensajeRealtimeDTO,
+    WebrtcSignalCommand,
+    WebrtcSignalDTO,
+    EmitirRecetaTeleconsultaCommand,
 )
 
 router = APIRouter(prefix="/citas", tags=["Teleconsulta y Chat (CU15)"])
@@ -149,3 +156,124 @@ def enviar_mensaje_chat(
 ):
     """Registra y persiste un mensaje en el chat de la teleconsulta con actualización en base de datos."""
     return service.enviar_mensaje_chat(db, id_cita, command, current_user, tenant_id)
+
+
+@router.get(
+    "/{id_cita}/presencia",
+    response_model=PresenciaTeleconsultaDTO,
+    summary="Obtener estado de presencia de la teleconsulta en tiempo real",
+)
+def obtener_presencia_teleconsulta(
+    id_cita: str,
+    db: Session = Depends(get_db),
+):
+    data = service.obtener_presencia_teleconsulta(db, id_cita)
+    return PresenciaTeleconsultaDTO(**data)
+
+
+@router.post(
+    "/{id_cita}/presencia",
+    response_model=PresenciaTeleconsultaDTO,
+    summary="Actualizar presencia del doctor o paciente en la teleconsulta",
+)
+def actualizar_presencia_teleconsulta(
+    id_cita: str,
+    command: ActualizarPresenciaCommand,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    uid_conectado = None
+    try:
+        auth_hdr = request.headers.get("Authorization") or ""
+        if auth_hdr.lower().startswith("bearer "):
+            from app.core.security import decode_access_token
+            token_str = auth_hdr.split(" ", 1)[1].strip()
+            payload_jwt = decode_access_token(token_str)
+            if payload_jwt and payload_jwt.get("sub"):
+                uid_conectado = int(payload_jwt["sub"])
+    except Exception:
+        pass
+
+    data = service.actualizar_presencia_teleconsulta(
+        db, id_cita, command.rol, command.conectado, command.nombre, id_usuario=uid_conectado
+    )
+    return PresenciaTeleconsultaDTO(**data)
+
+
+@router.post(
+    "/{id_cita}/teleconsulta/receta",
+    status_code=status.HTTP_201_CREATED,
+    summary="Emitir Receta Médica Digital (CU16) y Consulta HCE (CU28) al finalizar o recetar en teleconsulta",
+)
+def emitir_receta_teleconsulta_endpoint(
+    id_cita: str,
+    command: EmitirRecetaTeleconsultaCommand,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    return service.emitir_receta_teleconsulta(
+        db,
+        id_cita=id_cita,
+        command=command,
+        current_user=current_user,
+        tenant_id=tenant_id,
+        client_ip=client_ip,
+    )
+
+
+@router.get(
+    "/{id_cita}/chat/realtime",
+    response_model=List[MensajeRealtimeDTO],
+    summary="Obtener mensajes de chat en tiempo real",
+)
+def obtener_mensajes_tiempo_real(id_cita: str):
+    return service.obtener_mensajes_tiempo_real(id_cita)
+
+
+@router.post(
+    "/{id_cita}/chat/realtime",
+    response_model=List[MensajeRealtimeDTO],
+    summary="Enviar mensaje de chat en tiempo real",
+)
+def guardar_mensaje_tiempo_real(id_cita: str, mensaje: MensajeRealtimeDTO):
+    return service.guardar_mensaje_tiempo_real(id_cita, mensaje.model_dump())
+
+
+@router.post(
+    "/{id_cita}/webrtc/signal",
+    response_model=WebrtcSignalDTO,
+    summary="Enviar señal WebRTC (Offer, Answer, ICE Candidate, Pantalla)",
+)
+def enviar_senal_webrtc(id_cita: str, command: WebrtcSignalCommand):
+    res = service.registrar_senal_webrtc(
+        id_cita,
+        command.de,
+        command.para,
+        command.tipo,
+        command.data,
+        peer_id=command.peerId,
+        target_peer_id=command.targetPeerId,
+    )
+    return WebrtcSignalDTO(**res)
+
+
+@router.get(
+    "/{id_cita}/webrtc/signal",
+    response_model=List[WebrtcSignalDTO],
+    summary="Obtener señales WebRTC pendientes para un rol",
+)
+def obtener_senales_webrtc(id_cita: str, para: str = Query(..., description="DOCTOR o PACIENTE")):
+    lista = service.obtener_senales_webrtc(id_cita, para)
+    return [WebrtcSignalDTO(**s) for s in lista]
+
+
+@router.delete(
+    "/{id_cita}/webrtc/signal",
+    summary="Limpiar señales WebRTC al cerrar la sala",
+)
+def limpiar_senales_webrtc(id_cita: str):
+    service.limpiar_senales_webrtc(id_cita)
+    return {"ok": True}

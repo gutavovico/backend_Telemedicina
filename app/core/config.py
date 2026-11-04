@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     DB_PASSWORD: str = "12345"
     DB_HOST: str = "localhost"
     DB_PORT: int = 5432
+    DB_SSLMODE: str = ""
+    DB_CHANNEL_BINDING: str = ""
 
     # JWT
     JWT_SECRET_KEY: str = "clave_secreta_super_segura_telemedicina_2026_jwt_access"
@@ -64,6 +66,8 @@ class Settings(BaseSettings):
 
     # CORS
     CORS_ORIGINS: str = "http://localhost:4200,https://frontend-telemedicina-weld.vercel.app"
+
+    BACKUP_DIR: str = "backups"
 
     # Almacenamiento de documentos (CU12) y recetas (CU16)
     STORAGE_BACKEND: str = "local"  # local | minio | r2 | s3
@@ -125,6 +129,12 @@ class Settings(BaseSettings):
     GROQ_TRANSCRIPTION_MODEL: str = "whisper-large-v3"
     GROQ_TRANSCRIPTION_TIMEOUT_SECONDS: float = 30.0
 
+    # CU17: credenciales fuera del repositorio; valores vacíos desactivan push.
+    CU17_FCM_PROJECT_ID: str = ""
+    CU17_FCM_SERVICE_ACCOUNT_FILE: str = ""
+    CU17_DEVICE_TOKEN_KEY: SecretStr = SecretStr("")
+    CU17_SYSTEM_USER_IDS_JSON: str = "{}"
+
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[2] / ".env",
         env_file_encoding="utf-8",
@@ -133,7 +143,13 @@ class Settings(BaseSettings):
 
     @property
     def DATABASE_URL(self) -> str:
-        return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        base = f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        params = []
+        if self.DB_SSLMODE:
+            params.append(f"sslmode={self.DB_SSLMODE}")
+        if self.DB_CHANNEL_BINDING:
+            params.append(f"channel_binding={self.DB_CHANNEL_BINDING}")
+        return base + (("?" + "&".join(params)) if params else "")
 
     @property
     def cors_origins_list(self) -> List[str]:

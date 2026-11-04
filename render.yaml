@@ -1,0 +1,175 @@
+# CU17 - INSTRUCCIONES COMPLETAS PARA EL LIDER DEL PROYECTO
+# ==========================================================
+# Este archivo es el Blueprint de Render. Declara la API existente y un nuevo
+# Cron Job. NO contiene credenciales. Los comentarios no afectan a Render.
+#
+# PASO 1 - PUBLICAR Y REVISAR LA RAMA
+#   1. Subir al repositorio backend la rama que contiene este render.yaml,
+#      alembic/versions/013_tratamientos_cu17.py,
+#      alembic/versions/014_operaciones_dosis_cu17.py,
+#      alembic/versions/015_merge_cu17_backup.py, el modulo tratamientos,
+#      scripts/run_cu17_notificaciones.py y requirements.txt.
+#   2. En Render > backend-telemedicina > Settings, anotar repositorio, rama,
+#      nombre exacto, runtime Python, plan y region actuales. Este YAML usa el
+#      nombre backend-telemedicina; si el servicio se llama distinto, corregir
+#      el campo name antes de sincronizar. Conservar el plan/region existentes.
+#   3. Render > New > Blueprint: seleccionar ese repositorio y rama, con ruta
+#      render.yaml. En la vista previa comprobar que la API EXISTENTE se
+#      actualiza y que solo cu17-notificaciones figura como servicio nuevo.
+#      Si Render muestra otra API nueva o un nombre con sufijo, no confirmar:
+#      usar Generate Blueprint desde el servicio existente y ajustar este YAML.
+#      Esperar al PASO 2 antes de confirmar. El primer aprovisionamiento puede
+#      iniciar un despliegue aunque autoDeployTrigger='off' bloquee despliegues
+#      automaticos posteriores por commits.
+#
+# PASO 2 - PREPARAR NEON ANTES DE ACTIVAR EL CODIGO NUEVO
+#   1. En Neon SQL Editor ejecutar: SELECT version_num FROM alembic_version;
+#      Guardar un respaldo de la base objetivo.
+#   2. Si devuelve cu17_backup_merge_015: esquema CU17 y backup ya aplicado;
+#      NO ejecutar SQL ni repetir la migracion.
+#   3. Si devuelve backup01ab23cd y no hay tablas CU17: ejecutar TODO el archivo
+#      deploy/cu17_neon_desde_backup01ab23cd.sql en Neon SQL Editor. Incluye
+#      tablas, indices, permisos, trigger y sello Alembic en una transaccion.
+#   4. Si devuelve 014_operaciones_dosis_cu17: CU17 ya existe pero falta la
+#      rama backup. No usar el SQL; desde un entorno con DB_* ejecutar
+#      python -m alembic upgrade head para aplicar backup y unir las ramas.
+#   5. Si devuelve f7a8b9c0d1e2: el SQL separado NO aplica. Ejecutar
+#      python -m alembic upgrade head para instalar ambas ramas y la union.
+#      Si hay otra revision o tablas parciales: detenerse y revisar la base.
+#   6. Confirmar usuario SISTEMA activo por clinica. En la base de prueba,
+#      clinica 1 usa id_usuario=57. En otra base verificar su ID real antes de
+#      establecer CU17_SYSTEM_USER_IDS_JSON. No copiar 57 a ciegas.
+#
+# PASO 3 - CONFIGURAR VARIABLES EN AMBOS SERVICIOS DE RENDER
+#   1. Con Neon listo, confirmar el Blueprint revisado. Render solicita
+#      sync:false durante la creacion inicial. Luego revisar Render > cada
+#      servicio > Environment y completar faltantes.
+#      DB_HOST, DB_PORT, DB_NAME, DB_USER y DB_PASSWORD deben apuntar a la
+#      MISMA base Neon en la API y en el Cron Job. El backend usa DB_*; una
+#      variable DATABASE_URL por si sola no configura este codigo.
+#      Para Neon, establecer DB_SSLMODE=require y DB_CHANNEL_BINDING=require
+#      en ambos servicios, como requiere la configuracion incorporada de main.
+#   2. En la API, conservar JWT_SECRET_KEY, JWT_REFRESH_SECRET_KEY y
+#      JWT_RESET_SECRET_KEY actuales. No reemplazarlos con los defaults.
+#   3. CU17_FCM_PROJECT_ID y CU17_FCM_SERVICE_ACCOUNT_FILE ya tienen valor
+#      publico en este YAML. CU17_SYSTEM_USER_IDS_JSON es JSON como {"1":57}
+#      solo si esa cuenta SISTEMA existe en la base objetivo.
+#   4. CU17_DEVICE_TOKEN_KEY es una clave Fernet estable. Si ambos entornos
+#      usan la misma base, copiar EXACTAMENTE la clave local ya usada para
+#      poder descifrar dispositivos existentes. Si la base es nueva, generar
+#      una clave una sola vez y guardar copia segura. No imprimirla en logs.
+#   5. Render solo solicita sync:false al crear un Blueprint por primera vez.
+#      Si la API o Blueprint ya existe, completar las claves faltantes en
+#      Environment de cada servicio. Render conserva variables existentes que
+#      este archivo no redefine.
+#
+# PASO 4 - CARGAR LA CUENTA DE SERVICIO FIREBASE COMO SECRET FILE
+#   1. Recibir por canal privado el JSON de la CUENTA DE SERVICIO del proyecto
+#      telemedicina-si2. No se requiere la contrasena personal de Google.
+#   2. En Render > backend-telemedicina > Environment > Secret Files > Add
+#      Secret File: Filename = cu17-firebase-service-account.json; Contents =
+#      contenido completo del JSON. Guardar. Repetir en cu17-notificaciones,
+#      o usar un Environment Group compartido con ese mismo Secret File.
+#   3. Render lo monta en /etc/secrets/cu17-firebase-service-account.json,
+#      ruta ya configurada abajo. Nunca subir el JSON a Git/render.yaml/APK.
+#
+# PASO 5 - ACTIVAR Y COMPROBAR
+#   1. Tras guardar variables y Secret Files, desplegar manualmente la API si
+#      aun no usa esa configuracion. Comprobar / y /docs en
+#      https://backend-telemedicina.onrender.com y verificar que /openapi.json
+#      incluye /api/v1/tratamientos y /api/v1/tratamientos/dispositivos.
+#   2. Si Render permite Shell, desde la raiz del backend ejecutar:
+#      python -m scripts.check_cu17_deploy
+#      Debe imprimir CU17_OK sin exponer claves. En plan gratuito no hay Shell;
+#      verificar migracion en Neon y registro 201 desde la app Android.
+#   3. Activar cu17-notificaciones con la misma rama y secretos. Su comando
+#      --once termina tras cada ciclo; Render lo ejecuta cada 5 minutos UTC.
+#      En Runs/Logs revisar avisos y entregas, y usar Trigger Run para prueba.
+#   4. Instalar un APK Android compilado para
+#      https://backend-telemedicina.onrender.com (el APK local de prueba usa
+#      127.0.0.1 y requiere USB). Sin cable: iniciar sesion PACIENTE, confirmar
+#      POST /api/v1/tratamientos/dispositivos = 201, ejecutar un ciclo, recibir
+#      un push, abrir la bandeja y cerrar sesion para verificar la revocacion.
+#      El google-services.json de Android pertenece a la app, NO a Render.
+#   5. Si es la misma Neon de prueba, el plan #68 esta activo y el worker puede
+#      generar sus recordatorios. Finalizar ese plan de demostracion con el
+#      medico tratante tras las pruebas antes de usar la base para pacientes.
+#   6. La rama main tambien incorpora copias de seguridad: antes de activar su
+#      programacion en Render, verificar que el servicio tenga pg_dump y que
+#      BACKUP_DIR apunte a almacenamiento adecuado para conservar los archivos.
+#      Esa operacion se administra por separado del Cron Job de CU17.
+#
+# REFERENCIAS OFICIALES
+#   https://render.com/docs/infrastructure-as-code
+#   https://render.com/docs/configure-environment-variables
+#   https://render.com/docs/cronjobs
+#   https://render.com/docs/ssh
+#   https://firebase.google.com/docs/cloud-messaging/send/v1-api
+services:
+  - type: web
+    name: backend-telemedicina
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_SSLMODE
+        sync: false
+      - key: DB_CHANNEL_BINDING
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: JWT_REFRESH_SECRET_KEY
+        sync: false
+      - key: JWT_RESET_SECRET_KEY
+        sync: false
+      - key: CU17_FCM_PROJECT_ID
+        value: telemedicina-si2
+      - key: CU17_FCM_SERVICE_ACCOUNT_FILE
+        value: /etc/secrets/cu17-firebase-service-account.json
+      - key: CU17_DEVICE_TOKEN_KEY
+        sync: false
+      - key: CU17_SYSTEM_USER_IDS_JSON
+        sync: false
+
+  - type: cron
+    name: cu17-notificaciones
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m scripts.run_cu17_notificaciones --once
+    schedule: "*/5 * * * *"
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_SSLMODE
+        sync: false
+      - key: DB_CHANNEL_BINDING
+        sync: false
+      - key: CU17_FCM_PROJECT_ID
+        value: telemedicina-si2
+      - key: CU17_FCM_SERVICE_ACCOUNT_FILE
+        value: /etc/secrets/cu17-firebase-service-account.json
+      - key: CU17_DEVICE_TOKEN_KEY
+        sync: false
+      - key: CU17_SYSTEM_USER_IDS_JSON
+        sync: false

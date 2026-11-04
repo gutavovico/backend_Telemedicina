@@ -1,6 +1,6 @@
-from sqlalchemy import Column, BigInteger, String, func, DateTime, Boolean, ForeignKey, JSON
+from sqlalchemy import Column, BigInteger, Integer, String, func, DateTime, Boolean, ForeignKey, JSON, CheckConstraint, Numeric, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 from app.core.database import Base
 
 
@@ -34,7 +34,7 @@ class RolPermiso(Base):
 class Permiso(Base):
     __tablename__ = "permisos"
 
-    id_permiso = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
+    id_permiso = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
     nombre = Column(String(100), nullable=False)
     descripcion = Column(String, nullable=True)
     modulo = Column(String(100), nullable=False)
@@ -50,7 +50,7 @@ class Permiso(Base):
 
 class Rol(Base):
     __tablename__ = "roles"
-    id_rol = Column(BigInteger, primary_key=True, autoincrement=True)
+    id_rol = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=True)
     nombre = Column(String(100), nullable=False)
     descripcion = Column(String, nullable=True)
@@ -60,6 +60,17 @@ class Rol(Base):
     rol_permisos = relationship("RolPermiso", back_populates="rol", cascade="all, delete-orphan")
     permisos = relationship("Permiso", secondary="rol_permisos", back_populates="roles", viewonly=True)
 
+    def __eq__(self, other):
+        if isinstance(other, str):
+            return self.nombre == other
+        return super().__eq__(other)
+
+    def __hash__(self):
+        return super().__hash__()
+
+    def __str__(self) -> str:
+        return self.nombre
+
     def __repr__(self) -> str:
         return f"<Rol(id={self.id_rol}, nombre='{self.nombre}', estado='{self.estado}')>"
 
@@ -67,8 +78,9 @@ class Rol(Base):
 class Usuario(Base):
     __tablename__ = "usuarios"
     id_usuario = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
-    id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=False)
-    id_rol = Column(BigInteger, ForeignKey("roles.id_rol"), nullable=False)
+    # La migración 001 ya permite NULL; d2e3f4a5b6c7 incorpora el rol global.
+    id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=True)
+    id_rol = Column(BigInteger, ForeignKey("roles.id_rol"), nullable=True)
     nombres = Column(String(100), nullable=False)
     apellidos = Column(String(100), nullable=False)
     correo = Column(String(150), unique=True, nullable=False, index=True)
@@ -162,9 +174,18 @@ class TokenBlacklist(Base):
 
 class Auditoria(Base):
     __tablename__ = "auditoria"
+    __table_args__ = (CheckConstraint(
+        "id_clinica IS NOT NULL OR COALESCE(tabla_afectada IN ('planes', 'versiones_plan'), FALSE)",
+        name="ck_auditoria_global_catalogo",
+    ),)
 
-    id_auditoria = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
-    id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=False)
+    id_auditoria = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+        index=True,
+    )
+    id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=True)
     id_usuario = Column(BigInteger, ForeignKey("usuarios.id_usuario"), nullable=False)
     tabla_afectada = Column(String(150), nullable=True)
     registro_id = Column(BigInteger, nullable=True)
@@ -179,6 +200,50 @@ class Auditoria(Base):
         return f"<Auditoria(id={self.id_auditoria}, accion='{self.accion}', tabla='{self.tabla_afectada}')>"
 
 
+_PLAN_ID = BigInteger().with_variant(Integer, "sqlite")
+
+
+class Plan(Base):
+    __tablename__ = "planes"
+    id: Mapped[int] = mapped_column(_PLAN_ID, primary_key=True, autoincrement=True)
+    codigo: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    version_actual: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    creado_en = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    actualizado_en = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    __table_args__ = (CheckConstraint("version_actual >= 1", name="ck_planes_version_positiva"),)
+
+
+class VersionPlan(Base):
+    __tablename__ = "versiones_plan"
+    id: Mapped[int] = mapped_column(_PLAN_ID, primary_key=True, autoincrement=True)
+    plan_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("planes.id", ondelete="RESTRICT"), nullable=False)
+    numero: Mapped[int] = mapped_column(Integer, nullable=False)
+    nombre: Mapped[str] = mapped_column(String(150), nullable=False)
+    descripcion: Mapped[str | None] = mapped_column(String(2000))
+    precio_mensual = mapped_column(Numeric(14, 2), nullable=False)
+    moneda: Mapped[str] = mapped_column(String(3), nullable=False, default="BOB")
+    ciclo: Mapped[str] = mapped_column(String(7), nullable=False, default="MENSUAL")
+    servicios_incluidos = mapped_column(JSON, nullable=False)
+    limite_medicos: Mapped[int | None] = mapped_column(Integer)
+    limite_sedes: Mapped[int | None] = mapped_column(Integer)
+    limite_consultas: Mapped[int | None] = mapped_column(Integer)
+    tarifas_excedentes = mapped_column(JSON, nullable=False)
+    demora_pago_dias: Mapped[int] = mapped_column(Integer, nullable=False)
+    creado_por: Mapped[int] = mapped_column(BigInteger, ForeignKey("usuarios.id_usuario", ondelete="RESTRICT"), nullable=False)
+    creado_en = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    __table_args__ = (
+        UniqueConstraint("plan_id", "numero", name="uq_versiones_plan_numero"),
+        CheckConstraint("numero >= 1", name="ck_versiones_plan_numero"),
+        CheckConstraint("precio_mensual >= 0 AND precio_mensual <= 999999999999.99", name="ck_versiones_plan_precio"),
+        CheckConstraint("moneda = 'BOB' AND ciclo = 'MENSUAL'", name="ck_versiones_plan_moneda_ciclo"),
+        CheckConstraint("limite_medicos IS NULL OR limite_medicos >= 0", name="ck_versiones_plan_medicos"),
+        CheckConstraint("limite_sedes IS NULL OR limite_sedes >= 0", name="ck_versiones_plan_sedes"),
+        CheckConstraint("limite_consultas IS NULL OR limite_consultas >= 0", name="ck_versiones_plan_consultas"),
+        CheckConstraint("demora_pago_dias >= 0", name="ck_versiones_plan_demora"),
+    )
+
+
 __all__ = [
     "Clinica",
     "Rol",
@@ -188,4 +253,6 @@ __all__ = [
     "SesionActiva",
     "TokenBlacklist",
     "Auditoria",
+    "Plan",
+    "VersionPlan",
 ]

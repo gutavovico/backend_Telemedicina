@@ -894,7 +894,9 @@ def obtener_pdf_receta(db: Session, *, user: Usuario, tenant_id: int, id_receta:
 def anular_receta(db: Session, *, user: Usuario, tenant_id: int, id_receta: int,
                   payload: schemas.RecetaAnulacionRequest, client_ip: Optional[str]) -> Receta:
     _require_clinica_activa(db, tenant_id)
-    receta = _receta_en_tenant(db, id_receta, tenant_id)
+    # Bloqueo común con CU17 para serializar anulación y registro de dosis.
+    receta = _q_receta(db).filter(Receta.id_receta == id_receta,
+                                  Receta.id_clinica == tenant_id).with_for_update().first()
     if receta is None:
         raise PrescriptionError(404, "Receta no encontrada", "PRESCRIPTION_NOT_FOUND")
 
@@ -958,6 +960,11 @@ def anular_receta(db: Session, *, user: Usuario, tenant_id: int, id_receta: int,
         raise PrescriptionError(500, "El documento de la receta no está disponible",
                                 "PRESCRIPTION_ERROR")
     documento.estado = "ANULADO"
+
+    # La suspensión del plan vinculado y su auditoría pertenecen a esta misma
+    # transacción: no debe quedar un plan activo si se anula su receta.
+    from app.modules.medical_records.tratamientos.service import reconciliar_anulacion
+    reconciliar_anulacion(db, receta, user, client_ip)
 
     registrar_auditoria(
         db, id_usuario=user.id_usuario, id_clinica=tenant_id,

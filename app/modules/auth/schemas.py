@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Literal, Optional
-from pydantic import BaseModel, EmailStr, ConfigDict, Field
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
 
 
 class UsuarioBase(BaseModel):
@@ -38,6 +38,13 @@ class UsuarioResponse(BaseModel):
     token_version: int = 0
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("rol", mode="before")
+    @classmethod
+    def _normalize_rol(cls, v):
+        if hasattr(v, "nombre"):
+            return v.nombre
+        return str(v) if v is not None else None
 
 
 class LoginRequest(BaseModel):
