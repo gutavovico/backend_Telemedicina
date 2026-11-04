@@ -17,7 +17,11 @@ except ImportError:  # pragma: no cover - sin dependencia instalada
 
 from app.core.database import SessionLocal
 
-LA_PAZ = ZoneInfo("America/La_Paz")
+try:
+    LA_PAZ = ZoneInfo("America/La_Paz")
+except Exception:
+    from datetime import timezone, timedelta
+    LA_PAZ = timezone(timedelta(hours=-4))
 JOB_ID = "backup_programado"
 _DIA_MAP = {"lun": "mon", "mar": "tue", "mie": "wed", "jue": "thu",
             "vie": "fri", "sab": "sat", "dom": "sun"}

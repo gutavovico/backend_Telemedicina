@@ -57,6 +57,7 @@ def listar_citas(
     estado: Optional[str] = Query(None, description="Filtrar por estado: PENDIENTE, CONFIRMADA, COMPLETADA, CANCELADA"),
     id_medico: Optional[int] = Query(None, description="Filtrar por ID de médico"),
     id_paciente: Optional[int] = Query(None, description="Filtrar por ID de paciente"),
+    tipo_consulta: Optional[str] = Query(None, description="Filtrar por tipo de consulta"),
     page: int = Query(1, ge=1, description="Número de página"),
     page_size: int = Query(50, ge=1, le=100, description="Cantidad de registros por página"),
     db: Session = Depends(get_db),
@@ -69,6 +70,11 @@ def listar_citas(
             id_paciente = paciente_record.id_paciente
         else:
             return CitaListResponse(total=0, page=page, page_size=page_size, items=[])
+    elif current_user.id_rol == 2 and not id_medico:
+        from app.modules.appointments.models import Medico
+        medico_record = db.query(Medico).filter(Medico.id_usuario == current_user.id_usuario).first()
+        if medico_record:
+            id_medico = medico_record.id_medico
 
     return service.listar_citas(
         db=db,
@@ -77,6 +83,7 @@ def listar_citas(
         estado=estado,
         id_medico=id_medico,
         id_paciente=id_paciente,
+        tipo_consulta=tipo_consulta,
         page=page,
         page_size=page_size
     )

@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
     func,
@@ -37,7 +38,7 @@ class DocumentoClinico(Base):
     hash_archivo = Column(String(64), nullable=False)
     firmado_por = Column(BigInteger, ForeignKey("usuarios.id_usuario"), nullable=True)
     fecha_documento = Column(Date, nullable=False, index=True)
-    metadatos = Column(JSONB, nullable=True)
+    metadatos = Column(JSONB().with_variant(JSON(), "sqlite"), nullable=True)
     estado = Column(String(20), nullable=False, default="ACTIVO")  # ACTIVO, ANULADO
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

@@ -34,7 +34,7 @@ class RolPermiso(Base):
 class Permiso(Base):
     __tablename__ = "permisos"
 
-    id_permiso = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
+    id_permiso = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
     nombre = Column(String(100), nullable=False)
     descripcion = Column(String, nullable=True)
     modulo = Column(String(100), nullable=False)
@@ -50,7 +50,7 @@ class Permiso(Base):
 
 class Rol(Base):
     __tablename__ = "roles"
-    id_rol = Column(BigInteger, primary_key=True, autoincrement=True)
+    id_rol = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=True)
     nombre = Column(String(100), nullable=False)
     descripcion = Column(String, nullable=True)
@@ -59,6 +59,17 @@ class Rol(Base):
 
     rol_permisos = relationship("RolPermiso", back_populates="rol", cascade="all, delete-orphan")
     permisos = relationship("Permiso", secondary="rol_permisos", back_populates="roles", viewonly=True)
+
+    def __eq__(self, other):
+        if isinstance(other, str):
+            return self.nombre == other
+        return super().__eq__(other)
+
+    def __hash__(self):
+        return super().__hash__()
+
+    def __str__(self) -> str:
+        return self.nombre
 
     def __repr__(self) -> str:
         return f"<Rol(id={self.id_rol}, nombre='{self.nombre}', estado='{self.estado}')>"
@@ -168,7 +179,12 @@ class Auditoria(Base):
         name="ck_auditoria_global_catalogo",
     ),)
 
-    id_auditoria = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
+    id_auditoria = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+        index=True,
+    )
     id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=True)
     id_usuario = Column(BigInteger, ForeignKey("usuarios.id_usuario"), nullable=False)
     tabla_afectada = Column(String(150), nullable=True)
