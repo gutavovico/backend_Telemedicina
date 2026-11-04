@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # Credenciales temporales del alta institucional (CU32), sin dependencia de SMTP.
+    TEMP_CREDENTIAL_TTL_MINUTES: int = 30
+    TEMP_CREDENTIAL_MAX_REVEALS: int = 3
+    # Si se deja vacia, se deriva una clave estable del secreto JWT del servidor.
+    TEMP_CREDENTIAL_ENCRYPTION_KEY: str = ""
+
     # Recuperación de contraseña (CU23)
     # Clave usada para derivar el código de 6 dígitos con HMAC (sin BD)
     JWT_RESET_SECRET_KEY: str = "clave_secreta_super_segura_telemedicina_2026_reset_code"
@@ -95,6 +101,39 @@ class Settings(BaseSettings):
     # Vacía por defecto: no se confía en ningún proxy y se ignora el encabezado.
     # Ejemplo: "10.0.0.1, 192.168.1.10". Ver CU16 decisión 5.
     TRUSTED_PROXY_IPS: str = ""
+
+    # ------------------------------------------------------------------ #
+    # CU19 - Pagos en línea de citas y teleconsultas (Stripe Sandbox)
+    # ------------------------------------------------------------------ #
+    # Si STRIPE_SECRET_KEY está vacía, la pasarela opera en modo simulado
+    # (útil para demo/pruebas sin credenciales). Con clave configurada se
+    # crean sesiones reales de Stripe Checkout en el entorno sandbox.
+    STRIPE_SECRET_KEY: SecretStr = SecretStr("")
+    STRIPE_PUBLISHABLE_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: SecretStr = SecretStr("")
+    STRIPE_API_BASE_URL: str = "https://api.stripe.com"
+    STRIPE_CURRENCY: str = "bob"
+    STRIPE_TIMEOUT_SECONDS: float = 20.0
+    STRIPE_WEBHOOK_TOLERANCE_SECONDS: int = 300
+    # Importe por defecto (BOB) cuando la cita no tiene un servicio con costo.
+    PAYMENT_DEFAULT_AMOUNT: str = "50.00"
+    # URL pública del backend, usada para el QR corto y el retorno móvil.
+    PAYMENT_PUBLIC_BASE_URL: str = "http://localhost:8000"
+    # Retorno del Checkout en web y móvil.
+    PAYMENT_WEB_SUCCESS_URL: str = "http://localhost:4200/pagos/resultado"
+    PAYMENT_WEB_CANCEL_URL: str = "http://localhost:4200/mis-citas"
+    PAYMENT_MOBILE_SUCCESS_URL: str = "http://localhost:8000/pagos/retorno?estado=exito"
+    PAYMENT_MOBILE_CANCEL_URL: str = "http://localhost:8000/pagos/retorno?estado=cancelado"
+    # Vigencia de la sesión de pago (minutos).
+    PAYMENT_SESSION_TTL_MINUTES: int = 30
+
+    # CU31 - Suscripciones SaaS del tenant (reutiliza la pasarela Stripe).
+    SUBSCRIPTION_WEB_SUCCESS_URL: str = (
+        "http://localhost:4200/admin/suscripcion?checkout=success&session_id={CHECKOUT_SESSION_ID}"
+    )
+    SUBSCRIPTION_WEB_CANCEL_URL: str = (
+        "http://localhost:4200/admin/suscripcion?checkout=cancelled"
+    )
 
     # CU22: interpretación de texto con Groq (nunca se envía al cliente).
     GROQ_API_KEY: SecretStr = SecretStr("")

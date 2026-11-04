@@ -36,4 +36,10 @@ def reset_password(db: Session, correo: str, codigo: str, nueva_password: str) -
 
     user.password_hash = hash_password(nueva_password)
     user.token_version += 1
+    from app.modules.tenants.temporary_credentials import get_must_change_credential
+    credential = get_must_change_credential(db, user.id_usuario)
+    if credential:
+        from datetime import datetime, timezone
+        credential.temporary_password_changed_at = datetime.now(timezone.utc)
+        db.add(credential)
     db.commit()

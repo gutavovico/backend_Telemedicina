@@ -179,7 +179,7 @@ class TestCierreSesionGlobalCU24(unittest.TestCase):
         # Despues del logout, el mismo token deja de servir.
         respuesta = self.client.get("/auth/me", headers=headers)
         self.assertEqual(respuesta.status_code, 401)
-        self.assertIn("Sesion cerrada", respuesta.json()["detail"])
+        self.assertIn("Sesión cerrada", respuesta.json()["detail"])
 
     def test_logout_invalida_el_refresh_previo(self):
         self._crear_sesion("jti-logout")

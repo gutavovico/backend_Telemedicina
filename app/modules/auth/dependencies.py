@@ -8,16 +8,16 @@ from app.core.security import decode_access_token
 from app.modules.auth.models import Usuario
 from app.modules.auth.service import get_user_by_id
 from app.modules.auth.session_service import enforce_inactivity
+from app.modules.tenants.temporary_credentials import user_must_change_password
 
 security = HTTPBearer(auto_error=False)
 ADMIN_ROLE_ID = 1
 
 
-def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    db: Session = Depends(get_db)
+def _resolve_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials],
+    db: Session,
 ) -> Usuario:
-    """Dependency to retrieve the authenticated user from the Bearer JWT token."""
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -62,7 +62,6 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # CU23: ventana de inactividad por sesion.
     enforce_inactivity(
         db,
         payload.get("jti"),
@@ -77,6 +76,29 @@ def get_current_user(
         )
 
     return user
+
+
+def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: Session = Depends(get_db)
+) -> Usuario:
+    """Usuario autenticado con acceso completo a la API."""
+    user = _resolve_current_user(credentials, db)
+    if user_must_change_password(db, user.id_usuario):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Debe cambiar su contraseña temporal antes de continuar",
+            headers={"X-Must-Change-Password": "true"},
+        )
+    return user
+
+
+def get_current_user_allow_password_change(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: Session = Depends(get_db)
+) -> Usuario:
+    """Autenticación limitada al endpoint que reemplaza la contraseña temporal."""
+    return _resolve_current_user(credentials, db)
 
 
 def get_current_tenant_id(
