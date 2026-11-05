@@ -161,6 +161,13 @@ class Auditoria(Base):
     # La auditoría global puede ejecutarse sin id_clinica (CU30 y CU34).
     # La migración 020 elimina la restricción restrictiva de CU34.
 
+    __table_args__ = (CheckConstraint(
+        "id_clinica IS NOT NULL OR COALESCE(tabla_afectada IN ('planes', 'versiones_plan') OR "
+        "(tabla_afectada = 'tenant_requests' AND accion = 'RECHAZAR_TENANT_REQUEST') OR "
+        "(tabla_afectada = 'tenant_management' AND accion = 'ACCESO_DENEGADO'), FALSE)",
+        name="ck_auditoria_global_catalogo",
+    ),)
+
     id_auditoria = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
     id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=True)
     id_usuario = Column(BigInteger, ForeignKey("usuarios.id_usuario"), nullable=False)

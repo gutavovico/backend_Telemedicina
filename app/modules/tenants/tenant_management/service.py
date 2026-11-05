@@ -80,9 +80,10 @@ def _auditar_accion(
     datos_nuev: Optional[dict],
     descripcion: str,
 ):
+    target_clinic = registro_id if tabla == 'clinicas' or accion == 'APROBAR_TENANT_REQUEST' else None
     aud = Auditoria(
         id_usuario=user.id_usuario,
-        id_clinica=None,
+        id_clinica=target_clinic,
         tabla_afectada=tabla,
         registro_id=registro_id,
         accion=accion,
@@ -243,8 +244,9 @@ def approve_tenant_request(
             id_version_plan=req.id_version_plan,
             ciclo="MONTHLY",
             fecha_inicio=ahora,
-            fecha_fin=ahora + timedelta(days=30),
-            estado="ACTIVE",
+            fecha_fin=ahora,
+            dias_gracia=plan.demora_pago_dias,
+            estado="TRIALING",
             row_version=1,
         )
         db.add(suscripcion)

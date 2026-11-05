@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    SUBSCRIPTION_CYCLE_WORKER_ENABLED: bool = False
     # Base de Datos PostgreSQL
     DB_NAME: str = "telemedicina"
     DB_USER: str = "postgres"

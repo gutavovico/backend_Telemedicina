@@ -1,3 +1,5 @@
+from app.modules.tenants.subscription_changes.router import router as subscription_changes_router
+from app.modules.tenants.subscription_changes import worker as subscription_worker
 from contextlib import asynccontextmanager
 import json
 
@@ -51,8 +53,12 @@ async def lifespan(app: FastAPI):
         _log.warning("CU16 startup crypto validation warning: %s", exc)
 
     backup_scheduler.iniciar()
-    yield
-    backup_scheduler.detener()
+    subscription_worker.start()
+    try:
+        yield
+    finally:
+        subscription_worker.stop()
+        backup_scheduler.detener()
 
 
 app = FastAPI(
@@ -201,3 +207,5 @@ async def stripe_webhook_dispatcher(
         payload=payload,
         signature_header=signature,
     )
+
+app.include_router(subscription_changes_router)

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, status, Query, Request
+from fastapi import APIRouter, Depends, status, Query, Request, HTTPException
+from sqlalchemy import select, or_
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.core.database import get_db
@@ -19,6 +20,17 @@ from app.modules.communications.schemas import (
 )
 
 router = APIRouter(prefix="/citas", tags=["Teleconsulta y Chat (CU15)"])
+
+
+def require_clinical_appointment_access(id_cita: str, db: Session = Depends(get_db),
+        user: Usuario = Depends(get_current_user), tenant: int = Depends(get_required_tenant_id)):
+    """Also protect legacy realtime endpoints so CU35 cannot be bypassed anonymously."""
+    appointment = db.scalar(select(Cita).where(Cita.id_cita == service._normalizar_id_cita(id_cita),
+        or_(Cita.id_clinica == tenant, Cita.id_clinica.is_(None))))
+    if appointment is None:
+        raise HTTPException(404, 'Cita no encontrada en esta entidad')
+    service._verificar_acceso_cita(appointment, user)
+    return user
 
 
 @router.get(
@@ -160,6 +172,7 @@ def enviar_mensaje_chat(
 
 @router.get(
     "/{id_cita}/presencia",
+    dependencies=[Depends(require_clinical_appointment_access)],
     response_model=PresenciaTeleconsultaDTO,
     summary="Obtener estado de presencia de la teleconsulta en tiempo real",
 )
@@ -173,6 +186,7 @@ def obtener_presencia_teleconsulta(
 
 @router.post(
     "/{id_cita}/presencia",
+    dependencies=[Depends(require_clinical_appointment_access)],
     response_model=PresenciaTeleconsultaDTO,
     summary="Actualizar presencia del doctor o paciente en la teleconsulta",
 )
@@ -226,6 +240,7 @@ def emitir_receta_teleconsulta_endpoint(
 
 @router.get(
     "/{id_cita}/chat/realtime",
+    dependencies=[Depends(require_clinical_appointment_access)],
     response_model=List[MensajeRealtimeDTO],
     summary="Obtener mensajes de chat en tiempo real",
 )
@@ -235,6 +250,7 @@ def obtener_mensajes_tiempo_real(id_cita: str):
 
 @router.post(
     "/{id_cita}/chat/realtime",
+    dependencies=[Depends(require_clinical_appointment_access)],
     response_model=List[MensajeRealtimeDTO],
     summary="Enviar mensaje de chat en tiempo real",
 )
@@ -244,6 +260,7 @@ def guardar_mensaje_tiempo_real(id_cita: str, mensaje: MensajeRealtimeDTO):
 
 @router.post(
     "/{id_cita}/webrtc/signal",
+    dependencies=[Depends(require_clinical_appointment_access)],
     response_model=WebrtcSignalDTO,
     summary="Enviar señal WebRTC (Offer, Answer, ICE Candidate, Pantalla)",
 )
@@ -262,6 +279,7 @@ def enviar_senal_webrtc(id_cita: str, command: WebrtcSignalCommand):
 
 @router.get(
     "/{id_cita}/webrtc/signal",
+    dependencies=[Depends(require_clinical_appointment_access)],
     response_model=List[WebrtcSignalDTO],
     summary="Obtener señales WebRTC pendientes para un rol",
 )
@@ -272,6 +290,7 @@ def obtener_senales_webrtc(id_cita: str, para: str = Query(..., description="DOC
 
 @router.delete(
     "/{id_cita}/webrtc/signal",
+    dependencies=[Depends(require_clinical_appointment_access)],
     summary="Limpiar señales WebRTC al cerrar la sala",
 )
 def limpiar_senales_webrtc(id_cita: str):

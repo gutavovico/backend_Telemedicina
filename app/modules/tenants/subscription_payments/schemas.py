@@ -1,5 +1,8 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Literal
+from decimal import Decimal
+from pydantic import field_serializer
+from app.modules.auth.planes.schemas import VersionResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -9,6 +12,9 @@ class CurrentSubscriptionResponse(BaseModel):
     tenant_id: Optional[str] = None
     plan_nombre: Optional[str] = None
     id_plan_version: Optional[int] = None
+    plan_version_id: Optional[int] = None
+    version: Optional[VersionResponse] = None
+    row_version: Optional[int] = None
     ciclo: Optional[str] = None
     fecha_inicio: Optional[datetime] = None
     fecha_fin: Optional[datetime] = None
@@ -17,32 +23,26 @@ class CurrentSubscriptionResponse(BaseModel):
     derived_status: Optional[str] = None
     limite_medicos: Optional[int] = None
     limite_consultas_mes: Optional[int] = None
+    limite_sedes: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 
 
-class PlanVersionItem(BaseModel):
+class PlanVersionItem(VersionResponse):
     id_plan_version: int
-    nombre: str
-    descripcion: Optional[str] = None
-    precio_mensual: float
-    moneda: str
-    limite_medicos: Optional[int] = None
     limite_consultas_mes: Optional[int] = None
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 class CreateCheckoutRequest(BaseModel):
-    plan_version_id: int = Field(..., gt=0)
-    cycle: str = Field(default="MONTHLY", pattern="^MONTHLY$")
+    plan_version_id: int = Field(strict=True, gt=0)
+    cycle: Literal["MONTHLY", "MENSUAL"] = "MONTHLY"
 
     model_config = ConfigDict(extra="forbid")
 
 
 class CheckoutResponse(BaseModel):
     id_pago: str
-    monto: float
+    monto: Decimal
     moneda: str
     checkout_url: str
     expira_en: Optional[datetime] = None
@@ -52,13 +52,21 @@ class CheckoutStatusResponse(BaseModel):
     id_pago: str
     estado: str
     confirmado: bool
+    application_status: str
+    effective_at: Optional[datetime] = None
+    application_reason: Optional[str] = None
     checkout_url: Optional[str] = None
     expira_en: Optional[datetime] = None
 
 
 class SubscriptionPaymentItem(BaseModel):
+    application_status: str
+    application_reason: Optional[str] = None
+    plan_version_id: int
+    version: VersionResponse
+    purpose: Literal["RENEWAL", "UPGRADE"]
     id_pago: str
-    monto: float
+    monto: Decimal
     moneda: str
     ciclo: str
     estado: str
@@ -78,9 +86,11 @@ class SubscriptionPaymentHistoryResponse(BaseModel):
 
 
 class ReceiptMetadataResponse(BaseModel):
+    plan_version_id: int
+    purpose: Literal["RENEWAL", "UPGRADE"]
     id_pago: str
     numero_factura: str
-    monto: float
+    monto: Decimal
     moneda: str
     fecha_pago: Optional[datetime] = None
     tenant_nombre: str
