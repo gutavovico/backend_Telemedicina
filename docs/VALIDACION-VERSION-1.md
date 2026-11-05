@@ -30,14 +30,17 @@ creación del pago: 2026-11-05T05:07:34.220473Z.
 | plan_version_map | No en el estado consultado | Cero referencias legacy en clinicas.plan_id y tenant_requests.plan_version_id |
 | billing_anchor_map | Sí, para la suscripción existente | 022 exige el ancla original explícita, aunque las referencias sean canónicas |
 
-Las fechas actuales no prueban el día original de anclaje. No se preparó un
-mapa real ni se autorizó el día 5 para Neon. Falta evidencia o confirmación del
-responsable contractual; sin ella la migración se detiene antes de mutar datos.
+Las fechas no prueban el ancla histórica. Posteriormente el responsable autorizó
+adoptar el día UTC de inicio si el cierre es el aniversario mensual exacto.
+La condición se comprobó para las dos suscripciones actuales: se preparó mapa
+privado con día 5 para ambas. Es una decisión de migración, no evidencia recuperada.
+Véase NEON-CU35-PREPARADO.md; no se ha aplicado en la base compartida.
 
 ## Regresión aislada
 
 tests/test_cu35_postgres.py reproduce esos importes, condiciones y fechas con
-identificadores/cuentas ficticios. Compara todos los campos anteriores a la
+identificadores/cuentas ficticios. Se amplió a la segunda versión/pago de 250 BOB,
+sus condiciones y fechas exactas. Compara todos los campos anteriores a la
 migración en suscripción, pago y versión, y comprueba que no se duplica el pago.
 No modifica una instantánea para preparar el fixture: se inserta con sus
 condiciones definitivas, respetando el trigger de inmutabilidad de CU34.
@@ -48,7 +51,7 @@ upgrade head llega a cu35_cu18_convergencia_023 conservando todos los campos
 históricos, las referencias canónicas, estado PAGADO y fechas exactas; solo añade
 los campos previstos de CU35. Esa prueba no acredita el ancla real del destino.
 
-Resultado: nueve pruebas PostgreSQL CU35 aprobadas, incluyendo concurrencia y
+Resultado actualizado: diez pruebas PostgreSQL CU35 aprobadas, incluyendo concurrencia y
 worker idempotente. El clúster aislado se detuvo al terminar. No se modifican
 migraciones ni la pasarela; pagos simulados, sin
 verificación nueva en Stripe sandbox. El worker queda apagado localmente.

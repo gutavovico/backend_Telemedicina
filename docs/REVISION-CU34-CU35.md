@@ -52,8 +52,11 @@ pago 125.00 BOB; periodo 2026-11-05T05:29:41.470415Z a
 2026-12-05T05:29:41.470415Z. Referencias legacy NULL; FK RESTRICT verificadas.
 No existen auditorías globales incompatibles con el CHECK nuevo al consultar.
 No hay campo ancla ni eventos de auditoría de estas tablas que acrediten su origen.
-El día 5 observado NO se aprueba como ancla original. billing_anchor_map verificado
-sigue siendo obligatorio; la migración falla antes de alterar los datos sin él.
+Decisión posterior explícita del responsable: adoptar día UTC de inicio SOLO
+para las dos suscripciones actuales si el cierre es su aniversario mensual exacto.
+Ambas cumplen; se preparó billing_anchor_map privado con día 5 para ambas.
+Es adopción autorizada, no recuperación de evidencia histórica. Sin mapa explícito
+la migración sigue fallando antes de alterar los datos.
 Renovar una suscripción existente sin ancla devuelve 409 en vez de inferirla.
 No hubo escrituras Neon ni prueba de actualización en una copia Neon.
 Identificadores técnicos de la conexión confirmados; nombre/tipo de rama y acceso
@@ -63,7 +66,7 @@ configuración local ni IDs de filas reales en los fixtures o mapas del PR.
 ## Verificación final
 
 - Backend selección ampliada: 159 passed, 5 skipped (casos PG ejecutados aparte).
-- Selección PostgreSQL: 76 passed, incluye 5 CU34 PG y 9 CU35 reales. Los totales
+- Selección PostgreSQL final: 77 passed, incluye 5 CU34 PG y 10 CU35 reales. Los totales
   comparten casos; no sumarlos como pruebas distintas.
 - Cadena vacía -> head, CU35 anterior -> head y CU18 poblada -> head verificadas
   en PostgreSQL 17 existente, 127.0.0.1:55434. Se usaron bases cu34_test_*.
@@ -103,5 +106,21 @@ Ver DESPLIEGUE-CU35.md y PR-CU35.md para pasos posteriores.
 Se reconsultaron en solo lectura las condiciones completas de versiones_plan.id=1
 y su correspondencia con el pago de 125.00 BOB. La regresión poblada conserva
 todos los campos históricos anteriores a la migración, no solo precio y fechas.
-No se requieren mapas de versión para esas dos filas; billing_anchor_map sigue
-siendo obligatorio y pendiente de evidencia original. Véase VALIDACION-VERSION-1.md.
+No se requieren mapas de versión para esas dos filas. El ancla pendiente queda
+resuelta por adopción explícita del responsable para ambas suscripciones actuales
+tras comprobar su aniversario. Véanse VALIDACION-VERSION-1.md y NEON-CU35-PREPARADO.md.
+
+
+## Cierre de preparación Neon
+
+Lectura posterior: dos suscripciones/pagos canónicos por 125/250 BOB. Se verificó
+el aniversario mensual exacto y se adoptó explícitamente ancla 5 para ambas.
+Mapa y evidencia solo en .local-cu35-config, fuera de Git. La nueva regresión
+compara todos los campos históricos de ambas entidades y exige mapa completo.
+Diez pruebas PostgreSQL CU35 aprobadas: incluye cotejo de columnas/tipos/nulls,
+PK, FK, CHECK, unicidad e índices de las cinco tablas del contrato. El esquema
+CU35 está completo; no hizo falta cambiar revisiones ni código funcional.
+La copia Neon no está accesible/identificada para escritura. Quedan comandos
+protegidos en NEON-CU35-PREPARADO.md. Siguen pendientes copia Neon, Stripe sandbox,
+Render/configuración de despliegue y CLI OpenSpec. Frontend permanece en su rama
+review, según elección del usuario; su Terrazas no se concilia en esta entrega.

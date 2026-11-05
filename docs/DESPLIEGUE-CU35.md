@@ -5,9 +5,11 @@
 1. Aprobar contrato SDD y PR backend; coordinar autodeploy/ventana con el equipo.
 2. Confirmar proyecto/rama Neon y crear copia identificada para prueba, sin usar
    production. Capturar revisión y esquema con scripts/inspect_cu35_target.py.
-3. Recuperar del responsable o evidencia contractual el ancla mensual original de
-   cada suscripción existente. No usar fecha_inicio como sustituto. El destino
-   observado requiere billing_anchor_map; no requiere mapa legacy al estar NULL.
+3. Usar el mapa privado autorizado para las dos suscripciones existentes: adopción
+   explícita del ancla 5 tras verificar aniversario exacto, conservando cierres.
+   Véase NEON-CU35-PREPARADO.md para decisión y comandos seguros de copia.
+   No extrapolar esta adopción a otras filas; si aparecen más, conciliarlas.
+   El destino requiere billing_anchor_map, sin mapas legacy para las filas actuales.
 4. Si existen datos legacy, preparar snapshots fieles y mapas subscription_version_map,
    payment_version_map por fila, y plan_version_map para referencias antiguas.
    Mantener esa evidencia fuera de Git. No ejecutar 020 con backfill por nombre.
@@ -22,7 +24,9 @@ faltante y luego 023. Ambas rutas se probaron localmente, sin reescribir revisio
 
 Carpeta: raíz del backend de entrega. El .env pertenece a esa raíz; confirmar que
 DB_* de la terminal no lo sobrescriban. No imprimir claves ni URL autenticada.
-El siguiente ejemplo solicita la ruta de un JSON PRIVADO con un objeto que
+Para Neon COPIA usar preferentemente el bloque de NEON-CU35-PREPARADO.md:
+verifica su identidad y pasa JSON a Alembic sin el escape de argumentos de Windows.
+El siguiente ejemplo genérico solicita la ruta de un JSON PRIVADO con un objeto que
 relaciona ID de suscripción y día original verificado (entero 1..31):
 
 ```powershell

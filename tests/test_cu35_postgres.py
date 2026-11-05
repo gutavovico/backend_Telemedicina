@@ -13,7 +13,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi import HTTPException
-from sqlalchemy import create_engine, select, text, func, inspect
+from sqlalchemy import create_engine, select, text, func, inspect, UniqueConstraint, CheckConstraint
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
@@ -82,7 +82,7 @@ def isolated_database(target='cu35_cu18_convergencia_023'):
         root.dispose()
 
 
-def seed(db, subscriptions=True, first_price='200.00', first_conditions=None):
+def seed(db, subscriptions=True, first_price='200.00', version_conditions=None):
     for i in (1,2,3):
         db.add(Clinica(id_clinica=i,nombre=f'Prueba PG {i}',estado='ACTIVE'))
     db.flush()
@@ -99,9 +99,8 @@ def seed(db, subscriptions=True, first_price='200.00', first_conditions=None):
         version=VersionPlan(id=pid,plan_id=pid,numero=1,nombre=f'Plan {pid}',precio_mensual=price,
             moneda='BOB',ciclo='MENSUAL',limite_medicos=doctors,limite_sedes=None,limite_consultas=consults,
             servicios_incluidos=['AGENDA_TELECONSULTA'],tarifas_excedentes=[],demora_pago_dias=0,creado_por=90)
-        if pid==1:
-            for key,value in (first_conditions or {}).items():
-                setattr(version,key,value)
+        for key,value in (version_conditions or {}).get(pid,{}).items():
+            setattr(version,key,value)
         db.add(version)
     db.flush()
     # ORM fixtures with explicit IDs must also advance PostgreSQL sequences.
@@ -152,6 +151,48 @@ def test_migrated_schema_and_snapshot_history(pg):
         payment=db.get(SubscriptionPayment,change.payment_id)
         assert payment.id_version_plan==2 and payment.monto==Decimal('150.00')
         assert payment.plan_canonico.precio_mensual==Decimal('500.00')
+
+
+def test_full_subscription_schema_matches_models_after_real_migrations(pg):
+    engine,_=pg
+    with engine.connect() as conn:
+        schema=inspect(conn)
+        for model in (Plan,VersionPlan,TenantSubscription,SubscriptionPayment,SubscriptionChange):
+            table=model.__table__
+            assert schema.has_table(table.name)
+            columns={col['name']:col for col in schema.get_columns(table.name)}
+            for column in table.columns:
+                actual=columns[column.name]
+                assert actual['nullable']==column.nullable,(table.name,column.name)
+                assert actual['type'].compile(dialect=engine.dialect)==column.type.compile(dialect=engine.dialect),(
+                    table.name,column.name)
+            assert schema.get_pk_constraint(table.name)['constrained_columns']==[c.name for c in table.primary_key]
+            foreign_keys=schema.get_foreign_keys(table.name)
+            for fk in table.foreign_key_constraints:
+                assert any(actual['constrained_columns']==[c.name for c in fk.columns]
+                           and actual['referred_table']==next(iter(fk.elements)).column.table.name
+                           and actual['referred_columns']==[e.column.name for e in fk.elements]
+                           and (actual['options'].get('ondelete') or 'NO ACTION')==(fk.ondelete or 'NO ACTION')
+                           for actual in foreign_keys),(table.name,str(fk))
+            indexes=schema.get_indexes(table.name)
+            for index in table.indexes:
+                # Shared revisions can name equivalent indexes differently.
+                # CU35 uses their columns/uniqueness/predicate, never an index hint.
+                actual=next(i for i in indexes if i['column_names']==[c.name for c in index.columns]
+                            and i['unique']==index.unique)
+                predicate=actual.get('dialect_options',{}).get('postgresql_where')
+                assert bool(predicate)==bool(index.dialect_options['postgresql'].get('where') is not None)
+            unique_sets={tuple(i['column_names']) for i in indexes if i['unique']}
+            unique_sets.update(tuple(c['column_names']) for c in schema.get_unique_constraints(table.name))
+            checks={c['name'] for c in schema.get_check_constraints(table.name)}
+            for constraint in table.constraints:
+                if isinstance(constraint,UniqueConstraint):
+                    assert tuple(c.name for c in constraint.columns) in unique_sets
+                if isinstance(constraint,CheckConstraint):
+                    assert constraint.name in checks
+        pending=next(i for i in schema.get_indexes('subscription_changes') if i['name']=='uq_subscription_pending_change')
+        assert all(status in pending['dialect_options']['postgresql_where']
+                   for status in ('WAITING_PAYMENT','SCHEDULED','WAITING_RENEWAL'))
 
 
 def test_concurrent_same_key_creates_one_request(pg):
@@ -294,24 +335,33 @@ def test_cu18_populated_upgrade_requires_anchor_and_preserves_exact_snapshots():
                     'servicios_incluidos':['RECETAS_DIGITALES','LISTA_ESPERA','SUBDOMINIO_PROPIO',
                                           'INTEGRACIONES','LABORATORIO'],
                     'tarifas_excedentes':[],'demora_pago_dias':7}
+        second_start=datetime(2026,11,5,5,48,8,774346,tzinfo=timezone.utc)
+        second_end=datetime(2026,12,5,5,48,8,774346,tzinfo=timezone.utc)
+        second_conditions={'precio_mensual':'250.00','limite_medicos':30,'limite_sedes':20,
+                           'limite_consultas':200,'tarifas_excedentes':[],'demora_pago_dias':7,
+                           'servicios_incluidos':['RECETAS_DIGITALES','AGENDA_TELECONSULTA',
+                                'LISTA_ESPERA','LABORATORIO','INTEGRACIONES','SUBDOMINIO_PROPIO']}
         with sessions() as db:
-            seed(db,subscriptions=False,first_price='125.00',first_conditions=conditions)
+            seed(db,subscriptions=False,first_price='125.00',version_conditions={1:conditions,2:second_conditions})
             db.execute(text("INSERT INTO tenant_subscriptions (id_suscripcion,id_clinica,id_version_plan,ciclo,fecha_inicio,fecha_fin,estado,row_version) VALUES ('canonical-existing',1,1,'MONTHLY',:start,:end,'ACTIVE',2)"),{'start':start,'end':end})
             db.execute(text("INSERT INTO subscription_payments (id_pago_suscripcion,id_suscripcion,id_clinica,id_usuario,id_version_plan,ciclo,monto,moneda,estado,fecha_pago,fecha_creacion) VALUES ('canonical-paid','canonical-existing',1,1,1,'MONTHLY',125,'BOB','PAGADO',:paid,:created)"),{'paid':start-timedelta(microseconds=169141),'created':datetime(2026,11,5,5,7,34,220473,tzinfo=timezone.utc)})
+            db.execute(text("INSERT INTO tenant_subscriptions (id_suscripcion,id_clinica,id_version_plan,ciclo,fecha_inicio,fecha_fin,estado,row_version) VALUES ('canonical-second',2,2,'MONTHLY',:start,:end,'ACTIVE',2)"),{'start':second_start,'end':second_end})
+            db.execute(text("INSERT INTO subscription_payments (id_pago_suscripcion,id_suscripcion,id_clinica,id_usuario,id_version_plan,ciclo,monto,moneda,estado,fecha_pago,fecha_creacion) VALUES ('canonical-second-paid','canonical-second',2,2,2,'MONTHLY',250,'BOB','PAGADO',:paid,:created)"),{'paid':second_start-timedelta(microseconds=1883),'created':datetime(2026,11,5,5,47,26,532029,tzinfo=timezone.utc)})
             db.commit()
         with engine.connect() as conn:
-            historical={table:dict(conn.execute(text(f'SELECT * FROM {table} WHERE {pk}=:id'),
-                         {'id':row_id}).mappings().one()) for table,pk,row_id in (
-                             ('tenant_subscriptions','id_suscripcion','canonical-existing'),
-                             ('subscription_payments','id_pago_suscripcion','canonical-paid'),
-                             ('versiones_plan','id',1))}
+            tables=(('tenant_subscriptions','id_suscripcion'),('subscription_payments','id_pago_suscripcion'),
+                    ('versiones_plan','id'))
+            historical={table:[dict(row) for row in conn.execute(text(f'SELECT * FROM {table} ORDER BY {pk}')).mappings()]
+                        for table,pk in tables}
         with pytest.raises(RuntimeError,match='billing_anchor_map'):
             migrate_database(database,'head')
         with engine.connect() as conn:
             assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='merge_cu18_asistencia_022'
             assert 'billing_anchor_day' not in {c['name'] for c in inspect(conn).get_columns('tenant_subscriptions')}
+        with pytest.raises(RuntimeError,match='billing_anchor_map'):
+            migrate_database(database,'head',{'billing_anchor_map':{'canonical-existing':5}})
         # Explicit fixture anchor, NOT an inferred/approved mapping for the shared DB.
-        migrate_database(database,'head',{'billing_anchor_map':{'canonical-existing':5}})
+        migrate_database(database,'head',{'billing_anchor_map':{'canonical-existing':5,'canonical-second':5}})
         with sessions() as db:
             sub=db.get(TenantSubscription,'canonical-existing')
             payment=db.get(SubscriptionPayment,'canonical-paid')
@@ -325,12 +375,12 @@ def test_cu18_populated_upgrade_requires_anchor_and_preserves_exact_snapshots():
             assert payment.plan_canonico.precio_mensual==Decimal('125.00')
         with engine.connect() as conn:
             assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='cu35_cu18_convergencia_023'
-            for table,pk,row_id in (('tenant_subscriptions','id_suscripcion','canonical-existing'),
-                                   ('subscription_payments','id_pago_suscripcion','canonical-paid'),
-                                   ('versiones_plan','id',1)):
-                after=conn.execute(text(f'SELECT * FROM {table} WHERE {pk}=:id'),
-                                   {'id':row_id}).mappings().one()
-                assert {key:after[key] for key in historical[table]}==historical[table]
+            for table,pk in tables:
+                after=conn.execute(text(f'SELECT * FROM {table} ORDER BY {pk}')).mappings().all()
+                assert len(after)==len(historical[table])
+                for before,row in zip(historical[table],after):
+                    assert {key:row[key] for key in before}==before
             assert conn.scalar(text("SELECT count(*) FROM subscription_payments WHERE id_suscripcion='canonical-existing'"))==1
+            assert conn.scalar(text("SELECT count(*) FROM subscription_payments WHERE id_suscripcion='canonical-second'"))==1
             assert all(inspect(conn).has_table(t) for t in
                        ('evaluaciones_asistencia','interacciones_catalogo','alertas_interaccion','subscription_changes'))
