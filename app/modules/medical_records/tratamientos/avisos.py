@@ -70,8 +70,18 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def enviar_fcm(token: str, titulo: str, mensaje: str, id_tratamiento: int, id_aviso: int) -> None:
-    """Entrega mediante FCM HTTP v1. Lanza excepción si FCM no confirma el envío."""
+def descifrar_token(token_cifrado: str) -> str:
+    """Devuelve el token FCM original a partir del valor cifrado en base de datos."""
+    return _fernet().decrypt(token_cifrado.encode("ascii")).decode("utf-8")
+
+
+def enviar_fcm_mensaje(
+    token: str,
+    titulo: str,
+    mensaje: str,
+    data: dict | None = None,
+) -> None:
+    """Entrega genérica mediante FCM HTTP v1. Lanza excepción si FCM no confirma."""
     if not push_configurado():
         raise RuntimeError("PROVEEDOR_NO_CONFIGURADO")
     from google.auth.transport.requests import Request as GoogleRequest
@@ -84,7 +94,7 @@ def enviar_fcm(token: str, titulo: str, mensaje: str, id_tratamiento: int, id_av
     credentials.refresh(GoogleRequest())
     project = settings.CU17_FCM_PROJECT_ID.strip()
     payload = {"message": {"token": token, "notification": {"title": titulo, "body": mensaje},
-                           "data": {"id_tratamiento": str(id_tratamiento), "id_aviso": str(id_aviso)}}}
+                           "data": {str(k): str(v) for k, v in (data or {}).items()}}}
     request = Request(
         f"https://fcm.googleapis.com/v1/projects/{project}/messages:send",
         data=json.dumps(payload).encode("utf-8"),
@@ -95,6 +105,16 @@ def enviar_fcm(token: str, titulo: str, mensaje: str, id_tratamiento: int, id_av
         result = json.loads(response.read().decode("utf-8"))
         if response.status != 200 or not result.get("name"):
             raise RuntimeError("FCM_SIN_CONFIRMACION")
+
+
+def enviar_fcm(token: str, titulo: str, mensaje: str, id_tratamiento: int, id_aviso: int) -> None:
+    """Entrega de avisos CU17 mediante FCM HTTP v1."""
+    enviar_fcm_mensaje(
+        token,
+        titulo,
+        mensaje,
+        {"id_tratamiento": id_tratamiento, "id_aviso": id_aviso},
+    )
 
 
 def _receta_valida(db: Session, plan: Tratamiento) -> bool:

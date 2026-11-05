@@ -17,6 +17,7 @@ from app.modules.analytics.router import router as analytics_router
 from app.modules.communications.router import router as communications_router
 from app.modules.payments.router import router as payments_router, pago_error_handler
 from app.modules.payments.service import PagoError
+from app.modules.notificaciones.router import router as notificaciones_router
 from app.modules.medical_records.prescriptions.router import prescription_error_handler
 from app.modules.medical_records.prescriptions.service import PrescriptionError
 from app.modules.medical_records.tratamientos.router import treatment_error_handler
@@ -126,6 +127,10 @@ app.add_exception_handler(PlanError, plan_error_handler)
 # Pagos de citas y teleconsultas + comprobantes (CU19)
 app.include_router(payments_router)
 app.include_router(payments_router, prefix="/api/v1")
+
+# Notificaciones push del móvil (CU19)
+app.include_router(notificaciones_router)
+app.include_router(notificaciones_router, prefix="/api/v1")
 
 # CU16: formato de error uniforme {"detail", "code"}
 app.add_exception_handler(PrescriptionError, prescription_error_handler)
