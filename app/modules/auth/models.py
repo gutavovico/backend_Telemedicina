@@ -7,7 +7,9 @@ from app.core.database import Base
 
 class Clinica(Base):
     __tablename__ = "clinicas"
-    id_clinica = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    id_clinica = Column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
     tenant_id = Column(String(36), unique=True, nullable=True, index=True)
     nombre = Column(String(150), nullable=False)
     razon_social = Column(String(200), nullable=True)
@@ -83,6 +85,7 @@ class Rol(Base):
 class Usuario(Base):
     __tablename__ = "usuarios"
     id_usuario = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
+    # La migración 001 ya permite NULL; d2e3f4a5b6c7 incorpora el rol global.
     id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=True)
     id_rol = Column(BigInteger, ForeignKey("roles.id_rol"), nullable=True)
     nombres = Column(String(100), nullable=False)

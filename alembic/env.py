@@ -20,6 +20,7 @@ from app.modules.medical_records.prescriptions.models import (  # noqa: F401
     Medicamento, Receta, RecetaDetalle, ConfiguracionRecetas,
     SecuenciaRecetas, RecetaIdempotencia, RecetaValidacionIntento,
 )
+from app.modules.payments.models import Pago, Comprobante  # noqa: F401
 from app.modules.medical_records.tratamientos.models import (  # noqa: F401
     Tratamiento, TratamientoMedicamento, TratamientoDosis, TratamientoEvento,
 )
