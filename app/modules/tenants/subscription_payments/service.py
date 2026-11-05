@@ -2,475 +2,312 @@ import io
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
-from fastapi import HTTPException, status
+from decimal import Decimal
+from fastapi import HTTPException
+from sqlalchemy import select, or_, func
 from sqlalchemy.orm import Session
-
 from app.core.config import settings
-from app.core.tenant_status import CANONICAL_ACTIVE, canonical_tenant_status
-from app.modules.auth.models import Clinica, Plan, Usuario, VersionPlan
-from app.modules.payments.service import (
-    _stripe_request,
-    stripe_habilitado,
-    verificar_firma_stripe,
-)
-from app.modules.tenants.models import PlanVersion, SubscriptionPayment, TenantSubscription
-from .schemas import (
-    CheckoutResponse,
-    CurrentSubscriptionResponse,
-    PlanVersionItem,
-    ReceiptMetadataResponse,
-    SubscriptionPaymentHistoryResponse,
-    SubscriptionPaymentItem,
-)
+from app.modules.auth.models import Clinica, Usuario, Plan, VersionPlan
+from app.modules.auth.planes.schemas import VersionResponse
+from app.modules.payments.service import _stripe_request, stripe_habilitado, verificar_firma_stripe
+from app.modules.tenants.models import SubscriptionPayment, TenantSubscription, SubscriptionChange
+from app.modules.tenants.catalog import available_version, available_versions
+from app.modules.tenants.billing import utc, next_month
+from .schemas import (CheckoutResponse, CurrentSubscriptionResponse, PlanVersionItem,
+    ReceiptMetadataResponse, SubscriptionPaymentHistoryResponse, SubscriptionPaymentItem)
 
 
-def _to_utc(dt: Optional[datetime]) -> Optional[datetime]:
-    if dt is None:
-        return None
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
+def now_utc():
+    return datetime.now(timezone.utc)
 
 
-def _webhook_secret() -> str:
-    try:
-        return settings.STRIPE_WEBHOOK_SECRET.get_secret_value().strip()
-    except Exception:
-        return str(settings.STRIPE_WEBHOOK_SECRET or "").strip()
+def _webhook_secret():
+    secret = settings.STRIPE_WEBHOOK_SECRET
+    return secret.get_secret_value().strip() if hasattr(secret, 'get_secret_value') else str(secret or '').strip()
 
 
-def _url_con_pago(url: str, id_pago: str) -> str:
-    separador = "&" if "?" in url else "?"
-    return f"{url}{separador}pago={id_pago}"
+def _url_con_pago(url, payment_id):
+    return f"{url}{'&' if '?' in url else '?'}pago={payment_id}"
 
 
-def _crear_sesion_stripe(
-    plan: VersionPlan,
-    pago: SubscriptionPayment,
-    monto: float,
-    ciclo: str,
-) -> dict:
-    amount = int(round(monto * 100))
-    return _stripe_request(
-        "POST",
-        "/v1/checkout/sessions",
-        data={
-            "mode": "payment",
-            "line_items[0][quantity]": 1,
-            "line_items[0][price_data][currency]": (plan.moneda or settings.STRIPE_CURRENCY).lower(),
-            "line_items[0][price_data][unit_amount]": amount,
-            "line_items[0][price_data][product_data][name]": f"Suscripción {plan.nombre} ({ciclo})",
-            "line_items[0][price_data][product_data][description]": "Pago de suscripción de plataforma",
-            "success_url": _url_con_pago(settings.SUBSCRIPTION_WEB_SUCCESS_URL, pago.id_pago_suscripcion),
-            "cancel_url": settings.SUBSCRIPTION_WEB_CANCEL_URL,
-            "client_reference_id": f"suscripcion-{pago.id_pago_suscripcion}",
-            "locale": "es",
-            "metadata[id_pago_suscripcion]": pago.id_pago_suscripcion,
-            "metadata[tenant_id]": pago.id_clinica,
-            "metadata[tipo]": "suscripcion",
-        },
-    )
+def lock_subscription(db, tenant_id):
+    return db.scalar(select(TenantSubscription).where(TenantSubscription.id_clinica == tenant_id)
+        .with_for_update().execution_options(populate_existing=True))
 
 
-def _extender_vigencia(sub: TenantSubscription, ciclo: str) -> None:
-    """Extiende el período mensual sin perder días ya pagados."""
-    ahora = datetime.now(timezone.utc)
-    dias = 30
-    fin_actual = _to_utc(sub.fecha_fin)
-    if (
-        fin_actual is not None
-        and fin_actual > ahora
-        and canonical_tenant_status(sub.estado) == CANONICAL_ACTIVE
-    ):
-        # El nuevo período arranca el día siguiente al vencimiento vigente.
-        sub.fecha_inicio = fin_actual + timedelta(days=1)
-        sub.fecha_fin = sub.fecha_inicio + timedelta(days=dias - 1)
-    else:
-        sub.fecha_inicio = ahora
-        sub.fecha_fin = ahora + timedelta(days=dias)
-    sub.ciclo = ciclo
-    sub.estado = "ACTIVE"
-    sub.row_version += 1
+def _crear_sesion_stripe(plan, pago, monto, ciclo):
+    return _stripe_request('POST', '/v1/checkout/sessions', data={
+        'mode':'payment', 'line_items[0][quantity]':1,
+        'line_items[0][price_data][currency]':'bob',
+        'line_items[0][price_data][unit_amount]':int(monto * 100),
+        'line_items[0][price_data][product_data][name]':f'Suscripción {plan.nombre} ({ciclo})',
+        'success_url':_url_con_pago(settings.SUBSCRIPTION_WEB_SUCCESS_URL, pago.id_pago_suscripcion),
+        'cancel_url':settings.SUBSCRIPTION_WEB_CANCEL_URL,
+        'client_reference_id':f'suscripcion-{pago.id_pago_suscripcion}',
+        'metadata[id_pago_suscripcion]':pago.id_pago_suscripcion,
+        'metadata[tenant_id]':pago.id_clinica, 'metadata[tipo]':'suscripcion',
+    })
 
 
-def get_current_subscription(db: Session, tenant_id: int) -> CurrentSubscriptionResponse:
-    sub = db.query(TenantSubscription).filter(TenantSubscription.id_clinica == tenant_id).first()
-    if not sub:
-        return CurrentSubscriptionResponse(has_subscription=False)
-
-    ahora = datetime.now(timezone.utc)
-    fin = _to_utc(sub.fecha_fin) or ahora
-    gracia = sub.dias_gracia or 7
-
-    if fin < ahora:
-        if ahora <= fin + timedelta(days=gracia):
-            derived = "DUE_SOON"
-        else:
-            derived = "EXPIRED"
-    else:
-        if fin - ahora <= timedelta(days=5):
-            derived = "DUE_SOON"
-        else:
-            derived = "ACTIVE"
-
-    plan = sub.plan_canonico
-    return CurrentSubscriptionResponse(
-        has_subscription=True,
-        id_suscripcion=sub.id_suscripcion,
-        tenant_id=sub.tenant_id or str(sub.id_clinica),
-        plan_nombre=plan.nombre if plan else "Plan Base",
-        id_plan_version=plan.id if plan else sub.id_version_plan,
-        ciclo=sub.ciclo,
-        fecha_inicio=sub.fecha_inicio,
-        fecha_fin=sub.fecha_fin,
-        dias_gracia=sub.dias_gracia,
-        estado=sub.estado,
-        derived_status=derived,
-        limite_medicos=plan.limite_medicos if plan else None,
-        limite_consultas_mes=plan.limite_consultas if plan else None,
-    )
-
-
-def list_active_plans(db: Session) -> List[PlanVersionItem]:
-    planes = (
-        db.query(VersionPlan)
-        .join(Plan, Plan.id == VersionPlan.plan_id)
-        .filter(Plan.activo.is_(True), VersionPlan.numero == Plan.version_actual)
-        .order_by(VersionPlan.precio_mensual.asc())
-        .all()
-    )
-    return [
-        PlanVersionItem(
-            id_plan_version=p.id,
-            nombre=p.nombre,
-            descripcion=p.descripcion,
-            precio_mensual=float(p.precio_mensual),
-            moneda=p.moneda,
-            limite_medicos=p.limite_medicos,
-            limite_consultas_mes=p.limite_consultas,
-        )
-        for p in planes
-    ]
-
-
-def create_subscription_checkout(
-    db: Session,
-    tenant_id: int,
-    user: Usuario,
-    plan_version_id: int,
-    cycle: str,
-) -> CheckoutResponse:
-    if cycle.upper() != "MONTHLY":
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Solo se admiten contrataciones mensuales",
-        )
-    plan = (
-        db.query(VersionPlan)
-        .join(Plan, Plan.id == VersionPlan.plan_id)
-        .filter(
-            VersionPlan.id == plan_version_id,
-            Plan.activo.is_(True),
-            VersionPlan.numero == Plan.version_actual,
-        )
-        .first()
-    )
-    if not plan:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="La versión de plan solicitada no existe o no está activa",
-        )
-
-    # El precio autoritativo es siempre el mensual del catálogo CU34.
-    monto = float(plan.precio_mensual)
-
-    # Reutilizar checkout activo pendiente en vez de duplicar
-    ahora = datetime.now(timezone.utc)
-    hace_veinte_minutos = ahora - timedelta(minutes=20)
-    pago_existente = (
-        db.query(SubscriptionPayment)
-        .filter(
-            SubscriptionPayment.id_clinica == tenant_id,
-            SubscriptionPayment.id_version_plan == plan_version_id,
-            SubscriptionPayment.ciclo == "MONTHLY",
-            SubscriptionPayment.estado == "PENDING",
-            SubscriptionPayment.fecha_creacion >= hace_veinte_minutos,
-        )
-        .first()
-    )
-    if pago_existente and pago_existente.url_checkout:
-        return CheckoutResponse(
-            id_pago=pago_existente.id_pago_suscripcion,
-            monto=float(pago_existente.monto),
-            moneda=pago_existente.moneda,
-            checkout_url=pago_existente.url_checkout,
-            expira_en=pago_existente.expira_en,
-        )
-
-    # Crear suscripción o referencia
-    sub = db.query(TenantSubscription).filter(TenantSubscription.id_clinica == tenant_id).first()
-    if not sub:
-        sub = TenantSubscription(
-            id_clinica=tenant_id,
-            id_version_plan=plan_version_id,
-            ciclo="MONTHLY",
-            fecha_inicio=ahora,
-            fecha_fin=ahora,
-            estado="TRIALING",
-            row_version=1,
-        )
-        db.add(sub)
-        db.flush()
-
-    expira_en = ahora + timedelta(hours=2)
-    nuevo_pago = SubscriptionPayment(
-        id_suscripcion=sub.id_suscripcion,
-        id_clinica=tenant_id,
-        id_usuario=user.id_usuario,
-        id_version_plan=plan_version_id,
-        ciclo="MONTHLY",
-        monto=monto,
-        moneda=plan.moneda or "BOB",
-        estado="PENDING",
-        expira_en=expira_en,
-    )
-    db.add(nuevo_pago)
-    db.flush()
-
-    if stripe_habilitado():
-        sesion = _crear_sesion_stripe(plan, nuevo_pago, monto, "MONTHLY")
-        session_id = sesion.get("id") or f"cs_sub_{uuid.uuid4().hex}"
-        checkout_url = sesion.get("url") or ""
-        if not checkout_url:
+def prepare_payment(db, sub, user, version, amount, purpose='RENEWAL', start=None, end=None):
+    payment = SubscriptionPayment(id_suscripcion=sub.id_suscripcion, id_clinica=sub.id_clinica,
+        tenant_id=sub.tenant_id, id_usuario=user.id_usuario, id_version_plan=version.id,
+        ciclo='MONTHLY', monto=amount, moneda='BOB', estado='PENDING', purpose=purpose,
+        period_start=start, period_end=end, source_row_version=sub.row_version, expira_en=now_utc()+timedelta(hours=2))
+    db.add(payment); db.flush()
+    if amount > 0 and stripe_habilitado():
+        session = _crear_sesion_stripe(version, payment, amount, 'MENSUAL')
+        if not session.get('id') or not session.get('url'):
             db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Stripe no devolvió una URL de checkout válida",
-            )
+            raise HTTPException(502, 'Stripe no devolvió un checkout válido')
+        payment.stripe_session_id, payment.url_checkout = session['id'], session['url']
     else:
-        # Modo simulado (sin credenciales): nunca confirma el pago por sí solo.
-        session_id = f"cs_sub_{uuid.uuid4().hex}"
-        checkout_url = _url_con_pago(
-            f"{settings.SUBSCRIPTION_WEB_SUCCESS_URL.split('?')[0]}?checkout=simulated&session_id={session_id}",
-            nuevo_pago.id_pago_suscripcion,
-        )
-
-    nuevo_pago.stripe_session_id = session_id
-    nuevo_pago.url_checkout = checkout_url
-    db.commit()
-    db.refresh(nuevo_pago)
-
-    return CheckoutResponse(
-        id_pago=nuevo_pago.id_pago_suscripcion,
-        monto=monto,
-        moneda=nuevo_pago.moneda,
-        checkout_url=checkout_url,
-        expira_en=expira_en,
-    )
+        payment.stripe_session_id = 'cs_sub_'+uuid.uuid4().hex
+        payment.url_checkout = _url_con_pago(settings.SUBSCRIPTION_WEB_SUCCESS_URL.split('?')[0]
+            +'?checkout=simulated', payment.id_pago_suscripcion)
+    return payment
 
 
-def confirm_subscription_payment(
-    db: Session,
-    stripe_session_id_or_payment_id: str,
-) -> SubscriptionPayment:
-    pago = (
-        db.query(SubscriptionPayment)
-        .filter(
-            (SubscriptionPayment.stripe_session_id == stripe_session_id_or_payment_id)
-            | (SubscriptionPayment.id_pago_suscripcion == stripe_session_id_or_payment_id)
-        )
-        .first()
-    )
-    if not pago:
-        raise HTTPException(status_code=404, detail="Pago de suscripción no encontrado")
+def checkout_response(payment):
+    return CheckoutResponse(id_pago=payment.id_pago_suscripcion, monto=payment.monto,
+        moneda=payment.moneda, checkout_url=payment.url_checkout, expira_en=payment.expira_en)
 
-    # Idempotencia: si ya está pagado, no volver a extender
-    if pago.estado == "PAGADO":
-        return pago
 
-    pago.estado = "PAGADO"
-    pago.fecha_pago = datetime.now(timezone.utc)
-    if not pago.numero_factura:
-        pago.numero_factura = f"FAC-SUB-{uuid.uuid4().hex[:8].upper()}"
+def get_current_subscription(db, tenant_id):
+    sub = db.scalar(select(TenantSubscription).where(TenantSubscription.id_clinica == tenant_id))
+    if sub is None:
+        return CurrentSubscriptionResponse(has_subscription=False)
+    now = now_utc(); end = utc(sub.fecha_fin)
+    derived = sub.estado
+    if sub.estado not in ('CANCELLED', 'TRIALING'):
+        derived = ('EXPIRED' if now >= end+timedelta(days=sub.dias_gracia)
+                   else 'DUE_SOON' if now >= end-timedelta(days=5) else sub.estado)
+    plan = sub.plan_canonico
+    return CurrentSubscriptionResponse(id_plan_version=plan.id, has_subscription=True, id_suscripcion=sub.id_suscripcion,
+        tenant_id=sub.tenant_id or str(sub.id_clinica), plan_nombre=plan.nombre,
+        plan_version_id=plan.id, version=VersionResponse.model_validate(plan), row_version=sub.row_version,
+        ciclo='MONTHLY', fecha_inicio=sub.fecha_inicio, fecha_fin=sub.fecha_fin,
+        dias_gracia=sub.dias_gracia, estado=sub.estado, derived_status=derived,
+        limite_medicos=plan.limite_medicos, limite_sedes=plan.limite_sedes,
+        limite_consultas_mes=plan.limite_consultas)
 
-    # Extender período de suscripción respetando el tiempo restante
-    sub = db.query(TenantSubscription).filter(TenantSubscription.id_clinica == pago.id_clinica).first()
+
+def list_active_plans(db):
+    return [PlanVersionItem(**VersionResponse.model_validate(v).model_dump(),
+        id_plan_version=v.id, limite_consultas_mes=v.limite_consultas) for v in available_versions(db)]
+
+
+def create_subscription_checkout(db, tenant_id, user, plan_version_id, cycle):
+    if cycle not in ('MENSUAL','MONTHLY'):
+        raise HTTPException(422, 'Solo se admite MENSUAL')
+    # Serialize first contracts as well as renewals on the tenant row.
+    clinic = db.scalar(select(Clinica).where(Clinica.id_clinica == tenant_id).with_for_update())
+    if clinic is None:
+        raise HTTPException(404, 'Entidad no encontrada')
+    sub = lock_subscription(db, tenant_id)
+    if sub and sub.estado == 'CANCELLED':
+        raise HTTPException(409, 'La suscripción está cancelada')
+    from app.modules.tenants.subscription_changes.service import PENDING, validate_limits
+    scheduled = None
     if sub:
-        sub.id_plan_version = pago.id_plan_version
-        _extender_vigencia(sub, pago.ciclo)
+        scheduled = db.scalar(select(SubscriptionChange).where(
+            SubscriptionChange.id_clinica == tenant_id, SubscriptionChange.id_suscripcion == sub.id_suscripcion,
+            SubscriptionChange.status.in_(PENDING)).with_for_update())
+    if scheduled and scheduled.operation != 'NEXT_CYCLE':
+        raise HTTPException(409, 'La solicitud pendiente impide renovar, incluida una cancelación programada')
+    if scheduled:
+        if scheduled.target_version_id != plan_version_id:
+            raise HTTPException(409, 'Debe aceptar la versión exacta del cambio programado')
+        version = db.get(VersionPlan, scheduled.target_version_id)
+        if not db.get(Plan,version.plan_id).activo:
+            raise HTTPException(422, 'El plan de destino fue desactivado')
+    else:
+        version = available_version(db, plan_version_id)
+        if sub and sub.estado != 'TRIALING' and version.plan_id != sub.plan_canonico.plan_id:
+            raise HTTPException(409, 'El cambio a otro plan requiere CU35')
+    now = now_utc()
+    if not sub:
+        sub = TenantSubscription(id_clinica=tenant_id, tenant_id=clinic.tenant_id,
+            id_version_plan=version.id, ciclo='MONTHLY', fecha_inicio=now, fecha_fin=now,
+            dias_gracia=version.demora_pago_dias, billing_anchor_day=now.day, estado='TRIALING', row_version=1)
+        db.add(sub); db.flush()
+    if sub.billing_anchor_day is None:
+        if sub.estado != 'TRIALING':
+            raise HTTPException(409, 'La suscripción requiere conciliar su ancla mensual original')
+        sub.billing_anchor_day = now.day
+    pending = db.scalar(select(SubscriptionPayment).where(
+        SubscriptionPayment.id_clinica==tenant_id, SubscriptionPayment.estado=='PENDING',
+        SubscriptionPayment.purpose=='RENEWAL', SubscriptionPayment.expira_en>now).order_by(
+            SubscriptionPayment.fecha_creacion.desc()))
+    if pending:
+        if pending.id_version_plan != version.id:
+            raise HTTPException(409, 'Hay otro checkout pendiente con una versión distinta')
+        return checkout_response(pending)
+    start = (utc(scheduled.effective_at) if scheduled else
+             utc(sub.fecha_fin) if sub.estado == 'ACTIVE' and utc(sub.fecha_fin)>now else now)
+    end = next_month(start, sub.billing_anchor_day)
+    if end <= now:
+        raise HTTPException(409, 'El ciclo programado terminó sin renovarse; requiere conciliación')
+    if sub.estado != 'TRIALING':
+        validate_limits(db, sub, version, cycle_start=start, cycle_end=end)
+    if db.scalar(select(SubscriptionPayment.id_pago_suscripcion).where(
+            SubscriptionPayment.id_clinica == tenant_id, SubscriptionPayment.purpose == 'RENEWAL',
+            SubscriptionPayment.estado == 'PAGADO', SubscriptionPayment.period_start == start,
+            SubscriptionPayment.period_end == end)):
+        raise HTTPException(409, 'Ese ciclo ya está pagado; no se generará otro cobro')
+    amount = Decimal(version.precio_mensual).quantize(Decimal('0.01'))
+    payment = prepare_payment(db, sub, user, version, amount, start=start, end=end)
+    if scheduled:
+        scheduled.payment_id = payment.id_pago_suscripcion
+        scheduled.status = 'SCHEDULED'
+        scheduled.reason = None
+    db.commit(); db.refresh(payment)
+    if amount == 0:
+        # No gateway charge exists for a free renewal; still preserve a paid ledger entry.
+        confirm_subscription_payment(db, payment.id_pago_suscripcion)
+    return checkout_response(payment)
 
-    db.commit()
-    db.refresh(pago)
-    return pago
+
+def confirm_subscription_payment(db, stripe_session_id_or_payment_id):
+    ref = db.scalar(select(SubscriptionPayment).where(or_(
+        SubscriptionPayment.stripe_session_id==stripe_session_id_or_payment_id,
+        SubscriptionPayment.id_pago_suscripcion==stripe_session_id_or_payment_id)))
+    if ref is None:
+        raise HTTPException(404, 'Pago no encontrado')
+    sub = lock_subscription(db, ref.id_clinica)
+    payment = db.scalar(select(SubscriptionPayment).where(
+        SubscriptionPayment.id_pago_suscripcion==ref.id_pago_suscripcion,
+        SubscriptionPayment.id_clinica==sub.id_clinica).with_for_update().execution_options(populate_existing=True))
+    if payment.estado == 'PAGADO':
+        return payment
+    payment.estado = 'PAGADO'; payment.fecha_pago = now_utc()
+    payment.numero_factura = payment.numero_factura or 'FAC-SUB-'+uuid.uuid4().hex[:12].upper()
+    if payment.purpose == 'UPGRADE':
+        from app.modules.tenants.subscription_changes.service import apply_paid_upgrade
+        apply_paid_upgrade(db, sub, payment)
+        change = db.scalar(select(SubscriptionChange).where(SubscriptionChange.payment_id == payment.id_pago_suscripcion))
+        payment.application_status = 'APPLIED' if change.status == 'APPLIED' else 'REVIEW_REQUIRED'
+        payment.application_reason = change.reason
+    elif payment.period_start and now_utc() < utc(payment.period_start):
+        pending = db.scalar(select(SubscriptionChange).where(
+            SubscriptionChange.id_suscripcion == sub.id_suscripcion, SubscriptionChange.id_clinica == sub.id_clinica,
+            SubscriptionChange.status.in_(('WAITING_PAYMENT','SCHEDULED','WAITING_RENEWAL'))))
+        incompatible = (sub.estado == 'CANCELLED'
+            or (payment.source_row_version is not None and payment.source_row_version != sub.row_version)
+            or (pending is not None and pending.payment_id != payment.id_pago_suscripcion))
+        payment.application_status = 'REVIEW_REQUIRED' if incompatible else 'SCHEDULED'
+        if incompatible:
+            payment.application_reason = 'Contrato o solicitud pendiente incompatible con el pago recibido'
+
+    else:
+        apply_paid_renewal(db, sub, payment, now_utc())
+    db.commit(); db.refresh(payment)
+    return payment
 
 
-def sincronizar_checkout_suscripcion(
-    db: Session,
-    tenant_id: int,
-    id_pago: str,
-) -> SubscriptionPayment:
-    """Consulta el estado real en Stripe y confirma si el pago ya se completó."""
-    pago = (
-        db.query(SubscriptionPayment)
-        .filter(
-            SubscriptionPayment.id_pago_suscripcion == id_pago,
-            SubscriptionPayment.id_clinica == tenant_id,
-        )
-        .first()
-    )
-    if not pago:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Pago de suscripción no encontrado para este tenant",
-        )
-
-    if pago.estado == "PAGADO" or not stripe_habilitado() or not pago.stripe_session_id:
-        return pago
-
+def apply_paid_renewal(db, sub, payment, now):
+    if payment.application_status == 'APPLIED':
+        return payment
+    from app.modules.tenants.subscription_changes import service as changes
+    pending = db.scalar(select(SubscriptionChange).where(SubscriptionChange.payment_id == payment.id_pago_suscripcion,
+        SubscriptionChange.id_clinica == sub.id_clinica).with_for_update())
     try:
-        sesion = _stripe_request("GET", f"/v1/checkout/sessions/{pago.stripe_session_id}")
-    except Exception:
-        # La consulta a la pasarela no debe otorgar vigencia por sí sola.
-        return pago
+        if payment.estado != 'PAGADO' or payment.purpose != 'RENEWAL':
+            raise HTTPException(409, 'No hay pago de renovación confirmado')
+        if not payment.period_start or not utc(payment.period_start) <= now < utc(payment.period_end):
+            raise HTTPException(409, 'El pago no corresponde a un ciclo aplicable')
+        if sub.estado == 'CANCELLED' or (payment.source_row_version is not None and payment.source_row_version != sub.row_version):
+            raise HTTPException(409, 'El contrato cambió desde la aceptación de la renovación')
+        active_request = db.scalar(select(SubscriptionChange).where(
+            SubscriptionChange.id_suscripcion == sub.id_suscripcion,
+            SubscriptionChange.id_clinica == sub.id_clinica, SubscriptionChange.status.in_(changes.PENDING)))
+        if active_request and (pending is None or active_request.id != pending.id):
+            raise HTTPException(409, 'El pago no corresponde a la solicitud pendiente; requiere conciliacion')
+        if pending:
+            changes._apply(db, sub, pending, now, renewal_payment=payment)
+        else:
+            changes.validate_limits(db,sub,payment.plan_canonico,cycle_start=payment.period_start,cycle_end=payment.period_end)
+            sub.id_version_plan=payment.id_version_plan; sub.plan_canonico=payment.plan_canonico
+            sub.fecha_inicio=payment.period_start; sub.fecha_fin=payment.period_end
+            sub.dias_gracia=payment.plan_canonico.demora_pago_dias; sub.estado='ACTIVE'; sub.row_version+=1
+        payment.application_status='APPLIED'; payment.application_reason=None
+    except HTTPException as exc:
+        payment.application_status='REVIEW_REQUIRED'; payment.application_reason=str(exc.detail)[:250]
+        if pending:
+            pending.status='REVIEW_REQUIRED'; pending.reason=payment.application_reason
+    return payment
 
-    if sesion.get("payment_status") == "paid":
-        return confirm_subscription_payment(db, pago.stripe_session_id)
-    return pago
+
+def verified_payment(db, payment, session):
+    if (session.get('payment_status') != 'paid'
+            or session.get('amount_total') != int(Decimal(payment.monto)*100)
+            or str(session.get('currency','')).upper() != 'BOB'
+            or session.get('id') != payment.stripe_session_id):
+        raise HTTPException(422, 'Confirmación de pasarela no coincide con el pago')
+    return confirm_subscription_payment(db, payment.id_pago_suscripcion)
 
 
-def procesar_webhook_suscripcion(
-    db: Session,
-    payload: bytes,
-    signature_header: str,
-) -> dict:
-    """Webhook Stripe firmado e idempotente para suscripciones (CU31)."""
+def sincronizar_checkout_suscripcion(db, tenant_id, id_pago):
+    payment = db.scalar(select(SubscriptionPayment).where(
+        SubscriptionPayment.id_pago_suscripcion==id_pago, SubscriptionPayment.id_clinica==tenant_id))
+    if payment is None:
+        raise HTTPException(404, 'Pago no encontrado para esta entidad')
+    if payment.estado=='PAGADO' or not stripe_habilitado():
+        return payment
+    session = _stripe_request('GET','/v1/checkout/sessions/'+payment.stripe_session_id)
+    return verified_payment(db,payment,session) if session.get('payment_status')=='paid' else payment
+
+
+def procesar_webhook_suscripcion(db, payload, signature_header):
     verificar_firma_stripe(payload, signature_header, _webhook_secret())
-
     try:
-        evento = json.loads(payload.decode("utf-8"))
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cuerpo de webhook inválido",
-        ) from exc
-
-    tipo = evento.get("type") or ""
-    sesion = (evento.get("data") or {}).get("object") or {}
-    metadata = sesion.get("metadata") or {}
-    id_pago = metadata.get("id_pago_suscripcion")
-    session_id = sesion.get("id")
-
-    pago = None
-    if id_pago:
-        pago = (
-            db.query(SubscriptionPayment)
-            .filter(SubscriptionPayment.id_pago_suscripcion == id_pago)
-            .first()
-        )
-    if pago is None and session_id:
-        pago = (
-            db.query(SubscriptionPayment)
-            .filter(SubscriptionPayment.stripe_session_id == session_id)
-            .first()
-        )
-
-    if pago is None:
-        return {"received": True, "ignored": tipo, "motivo": "pago no encontrado"}
-
-    if tipo in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
-        pago = confirm_subscription_payment(db, pago.id_pago_suscripcion)
-        return {"received": True, "id_pago": pago.id_pago_suscripcion, "estado": pago.estado}
-
-    if tipo == "checkout.session.expired" and pago.estado == "PENDING":
-        pago.estado = "CANCELADO"
-        db.commit()
-    elif tipo in ("checkout.session.async_payment_failed", "payment_intent.payment_failed"):
-        if pago.estado == "PENDING":
-            pago.estado = "FALLIDO"
+        event=json.loads(payload)
+    except (ValueError, UnicodeError):
+        raise HTTPException(400,'Webhook inválido')
+    session=(event.get('data') or {}).get('object') or {}
+    payment=db.scalar(select(SubscriptionPayment).where(SubscriptionPayment.stripe_session_id==session.get('id')))
+    if payment is None:
+        return {'received':True,'ignored':True}
+    kind=event.get('type')
+    if kind in ('checkout.session.completed','checkout.session.async_payment_succeeded'):
+        if session.get('payment_status')=='paid':
+            payment=verified_payment(db,payment,session)
+    elif kind in ('checkout.session.expired','checkout.session.async_payment_failed') and payment.estado=='PENDING':
+        sub=lock_subscription(db,payment.id_clinica)
+        payment=db.scalar(select(SubscriptionPayment).where(SubscriptionPayment.id_pago_suscripcion==payment.id_pago_suscripcion)
+            .with_for_update().execution_options(populate_existing=True))
+        if payment.estado=='PENDING':
+            payment.estado='CANCELADO' if kind=='checkout.session.expired' else 'FALLIDO'
+            payment.application_status='NOT_APPLIED'
+            from app.modules.tenants.subscription_changes.service import fail_payment_change
+            fail_payment_change(db,sub,payment)
             db.commit()
-
-    return {"received": True, "id_pago": pago.id_pago_suscripcion, "estado": pago.estado}
-
-
-def list_subscription_payments(
-    db: Session,
-    tenant_id: int,
-    page: int = 1,
-    per_page: int = 20,
-) -> SubscriptionPaymentHistoryResponse:
-    query = db.query(SubscriptionPayment).filter(SubscriptionPayment.id_clinica == tenant_id)
-    total = query.count()
-    offset = (page - 1) * per_page
-    pagos = (
-        query.order_by(SubscriptionPayment.fecha_creacion.desc())
-        .offset(offset)
-        .limit(per_page)
-        .all()
-    )
-
-    items = [
-        SubscriptionPaymentItem(
-            id_pago=p.id_pago_suscripcion,
-            monto=float(p.monto),
-            moneda=p.moneda,
-            ciclo=p.ciclo,
-            estado=p.estado,
-            numero_factura=p.numero_factura,
-            fecha_pago=p.fecha_pago,
-            fecha_creacion=p.fecha_creacion,
-            plan_nombre=p.plan_canonico.nombre if p.plan_canonico else (p.plan.nombre if p.plan else None),
-        )
-        for p in pagos
-    ]
-
-    return SubscriptionPaymentHistoryResponse(
-        total=total,
-        page=page,
-        per_page=per_page,
-        items=items,
-    )
+    return {'received':True,'id_pago':payment.id_pago_suscripcion,'estado':payment.estado}
 
 
-def get_receipt_metadata(
-    db: Session,
-    tenant_id: int,
-    id_pago: str,
-) -> ReceiptMetadataResponse:
-    pago = (
-        db.query(SubscriptionPayment)
-        .filter(SubscriptionPayment.id_pago_suscripcion == id_pago)
-        .first()
-    )
-    if not pago or pago.id_clinica != tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Comprobante no encontrado para este tenant",
-        )
+def list_subscription_payments(db, tenant_id, page, per_page):
+    where=SubscriptionPayment.id_clinica==tenant_id
+    total=db.scalar(select(func.count()).select_from(SubscriptionPayment).where(where))
+    rows=db.scalars(select(SubscriptionPayment).where(where).order_by(
+        SubscriptionPayment.fecha_creacion.desc()).offset((page-1)*per_page).limit(per_page)).all()
+    return SubscriptionPaymentHistoryResponse(total=total,page=page,per_page=per_page,items=[
+        SubscriptionPaymentItem(application_status=p.application_status,application_reason=p.application_reason,plan_version_id=p.id_version_plan,version=VersionResponse.model_validate(p.plan_canonico),purpose=p.purpose,
+            id_pago=p.id_pago_suscripcion,monto=p.monto,moneda=p.moneda,ciclo=p.ciclo,
+            estado=p.estado,plan_nombre=p.plan_canonico.nombre,numero_factura=p.numero_factura,
+            fecha_pago=p.fecha_pago,fecha_creacion=p.fecha_creacion) for p in rows])
 
-    if pago.estado != "PAGADO":
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="El pago no ha sido confirmado; no se puede emitir comprobante",
-        )
 
-    clinica = db.query(Clinica).filter(Clinica.id_clinica == tenant_id).first()
-    plan = db.query(VersionPlan).filter(VersionPlan.id == pago.id_version_plan).first()
-    if not plan and pago.id_plan_version:
-        legacy = db.query(PlanVersion).filter(PlanVersion.id_plan_version == pago.id_plan_version).first()
-        plan = legacy
-
-    return ReceiptMetadataResponse(
-        id_pago=pago.id_pago_suscripcion,
-        numero_factura=pago.numero_factura or "S/N",
-        monto=float(pago.monto),
-        moneda=pago.moneda,
-        fecha_pago=pago.fecha_pago,
-        tenant_nombre=clinica.nombre if clinica else "Tenant",
-        plan_nombre=plan.nombre if plan else "Plan",
-        ciclo=pago.ciclo,
-        stripe_referencia=pago.stripe_session_id,
-    )
+def get_receipt_metadata(db, tenant_id, id_pago):
+    payment=db.scalar(select(SubscriptionPayment).where(
+        SubscriptionPayment.id_pago_suscripcion==id_pago,SubscriptionPayment.id_clinica==tenant_id))
+    if payment is None: raise HTTPException(404,'Comprobante no encontrado para esta entidad')
+    if payment.estado!='PAGADO': raise HTTPException(422,'El pago no ha sido confirmado')
+    clinic=db.get(Clinica,tenant_id)
+    return ReceiptMetadataResponse(plan_version_id=payment.id_version_plan,purpose=payment.purpose,
+        id_pago=payment.id_pago_suscripcion,numero_factura=payment.numero_factura,
+        monto=payment.monto,moneda=payment.moneda,fecha_pago=payment.fecha_pago,
+        tenant_nombre=clinic.nombre,plan_nombre=payment.plan_canonico.nombre,ciclo='MONTHLY',
+        stripe_referencia=payment.stripe_session_id)
 
 
 def build_subscription_receipt_pdf(
@@ -501,7 +338,7 @@ def build_subscription_receipt_pdf(
     fecha_str = meta.fecha_pago.strftime("%d/%m/%Y %H:%M UTC") if meta.fecha_pago else "-"
     c.drawString(50, 670, f"Fecha de Pago: {fecha_str}")
     c.drawString(50, 650, f"Tenant / Entidad: {meta.tenant_nombre}")
-    c.drawString(50, 630, f"Plan Contratado: {meta.plan_nombre}")
+    c.drawString(50, 630, f"Plan Contratado: {meta.plan_nombre} (version ID {meta.plan_version_id})")
     c.drawString(50, 610, f"Ciclo de Facturación: {meta.ciclo}")
     c.drawString(50, 590, f"Monto Total: {meta.monto:.2f} {meta.moneda}")
     c.drawString(50, 570, f"Referencia Stripe: {meta.stripe_referencia or 'N/D'}")

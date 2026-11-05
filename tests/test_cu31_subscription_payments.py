@@ -3,6 +3,8 @@ import hmac
 import json
 import time
 import unittest
+from app.modules.tenants.billing import utc, next_month
+from app.modules.auth.models import Plan, VersionPlan
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -16,7 +18,7 @@ from app.core.config import settings
 from app.core.database import Base, get_db
 from app.main import app
 from app.modules.auth.dependencies import get_current_user
-from app.modules.auth.models import Clinica, Plan, Rol, Usuario, VersionPlan
+from app.modules.auth.models import Clinica, Rol, Usuario
 from app.modules.tenants.models import SubscriptionPayment, TenantSubscription
 
 
@@ -46,22 +48,24 @@ class CU31SubscriptionPaymentsTestCase(unittest.TestCase):
 
     def setUp(self):
         with self.engine.begin() as conn:
+            conn.exec_driver_sql("DELETE FROM subscription_changes")
             conn.exec_driver_sql("DELETE FROM subscription_payments")
             conn.exec_driver_sql("DELETE FROM tenant_subscriptions")
+            conn.exec_driver_sql("DELETE FROM plan_versions")
             conn.exec_driver_sql("DELETE FROM versiones_plan")
             conn.exec_driver_sql("DELETE FROM planes")
             conn.exec_driver_sql("DELETE FROM usuarios")
             conn.exec_driver_sql("DELETE FROM roles")
             conn.exec_driver_sql("DELETE FROM clinicas")
 
-            # ClÃ­nicas: ClÃ­nica 1 y ClÃ­nica 2
+            # Clínicas: Clínica 1 y Clínica 2
             conn.exec_driver_sql("""
                 INSERT INTO clinicas (id_clinica, tenant_id, nombre, nit, estado, row_version)
-                VALUES (1, 'tenant-1-uuid', 'ClÃ­nica Los Olivos', '987654021', 'ACTIVE', 1),
-                       (2, 'tenant-2-uuid', 'ClÃ­nica San Gabriel', '123456022', 'ACTIVE', 1)
+                VALUES (1, 'tenant-1-uuid', 'Clínica Los Olivos', '987654021', 'ACTIVE', 1),
+                       (2, 'tenant-2-uuid', 'Clínica San Gabriel', '123456022', 'ACTIVE', 1)
             """)
 
-            # Roles ADMIN para cada clÃ­nica
+            # Roles ADMIN para cada clínica
             conn.exec_driver_sql("""
                 INSERT INTO roles (id_rol, id_clinica, nombre, estado)
                 VALUES (1, 1, 'ADMIN', 'activo'),
@@ -75,23 +79,13 @@ class CU31SubscriptionPaymentsTestCase(unittest.TestCase):
                        (2, 2, 2, 'Admin', 'Gabriel', 'admin@gabriel.com', 'hash', 'ACTIVO', 0, 1, 1, 0)
             """)
 
-            # Planes canÃ³nicos CU34
-            conn.exec_driver_sql("""
-                INSERT INTO planes (id, codigo, activo, version_actual)
-                VALUES (1, 'BASIC', 1, 1), (2, 'PRO', 1, 1)
-            """)
-            conn.exec_driver_sql("""
-                INSERT INTO versiones_plan (
-                    id, plan_id, numero, nombre, descripcion, precio_mensual,
-                    moneda, ciclo, servicios_incluidos, limite_medicos,
-                    limite_sedes, limite_consultas, tarifas_excedentes,
-                    demora_pago_dias, creado_por
-                )
-                VALUES (101, 1, 1, 'Plan BÃ¡sico', 'Ideal para consultorios', 200.0,
-                        'BOB', 'MENSUAL', '[]', 5, NULL, 50, '[]', 7, 1),
-                       (102, 2, 1, 'Plan Profesional', 'Para clÃ­nicas medianas', 500.0,
-                        'BOB', 'MENSUAL', '[]', 20, NULL, 300, '[]', 7, 1)
-            """)
+        with self.SessionLocal() as db:
+            for vid, name, price, doctors, consultations in [(1,'Plan Básico','200.00',5,50),(2,'Plan Profesional','500.00',20,300)]:
+                db.add(Plan(id=vid,codigo='TEST'+str(vid),activo=True,version_actual=1));db.flush()
+                db.add(VersionPlan(id=vid,plan_id=vid,numero=1,nombre=name,precio_mensual=price,
+                    moneda='BOB',ciclo='MENSUAL',servicios_incluidos=[],limite_medicos=doctors,
+                    limite_consultas=consultations,limite_sedes=None,tarifas_excedentes=[],demora_pago_dias=0,creado_por=1))
+            db.commit()
 
         self.db = self.SessionLocal()
         self.admin_tenant1 = self.db.get(Usuario, 1)
@@ -110,12 +104,17 @@ class CU31SubscriptionPaymentsTestCase(unittest.TestCase):
         tipo="checkout.session.completed",
         url="/api/v1/payments/webhook/stripe/subscription",
     ):
+        with self.SessionLocal() as db:
+            payment = db.get(SubscriptionPayment, id_pago)
+            actual_session = payment.stripe_session_id if payment else session_id
+            amount = int(payment.monto * 100) if payment else 0
         evento = {
             "id": "evt_cu31",
             "type": tipo,
             "data": {
                 "object": {
-                    "id": session_id or "cs_sub_test",
+                    "id": session_id or actual_session,
+                    "payment_status":"paid", "currency":"bob", "amount_total":amount,
                     "metadata": {
                         "id_pago_suscripcion": id_pago or "",
                         "tipo": "suscripcion",
@@ -154,7 +153,7 @@ class CU31SubscriptionPaymentsTestCase(unittest.TestCase):
         data = resp.json()
         self.assertEqual(len(data), 2)
         nombres = [p["nombre"] for p in data]
-        self.assertIn("Plan BÃ¡sico", nombres)
+        self.assertIn("Plan Básico", nombres)
         self.assertIn("Plan Profesional", nombres)
 
     def test_crear_checkout_calcula_monto_autoritativo_y_rechaza_campos_extra(self):
@@ -164,29 +163,26 @@ class CU31SubscriptionPaymentsTestCase(unittest.TestCase):
         resp_tamper = self.client.post(
             "/api/v1/subscriptions/checkout",
             json={
-                "plan_version_id": 102,
-                "cycle": "ANNUAL",
+                "plan_version_id": 2,
+                "cycle": "MENSUAL",
                 "monto": 10.0,
             },
         )
         self.assertEqual(resp_tamper.status_code, 422)
 
-        # El ciclo anual queda explícitamente rechazado.
-        resp_anual = self.client.post(
+        # Checkout mensual CU34: importe autoritativo 500.00 BOB
+        resp_annual = self.client.post(
             "/api/v1/subscriptions/checkout",
-            json={"plan_version_id": 102, "cycle": "ANNUAL"},
+            json={
+                "plan_version_id": 2,
+                "cycle": "MENSUAL",
+            },
         )
-        self.assertEqual(resp_anual.status_code, 422)
-
-        # Checkout mensual para Plan Pro (debe calcular 500.0 BOB).
-        resp_mensual = self.client.post(
-            "/api/v1/subscriptions/checkout",
-            json={"plan_version_id": 102, "cycle": "MONTHLY"},
-        )
-        self.assertEqual(resp_mensual.status_code, 201)
-        data = resp_mensual.json()
-        self.assertEqual(data["monto"], 500.0)
+        self.assertEqual(resp_annual.status_code, 201)
+        data = resp_annual.json()
+        self.assertEqual(data["monto"], "500.00")
         self.assertEqual(data["moneda"], "BOB")
+        # Sin credenciales la sesión es simulada, pero nunca confirma el pago.
         self.assertTrue(data["checkout_url"])
 
     def test_checkout_usa_sesion_real_de_stripe_cuando_esta_configurado(self):
@@ -204,7 +200,7 @@ class CU31SubscriptionPaymentsTestCase(unittest.TestCase):
         ) as crear_sesion:
             resp = self.client.post(
                 "/api/v1/subscriptions/checkout",
-                json={"plan_version_id": 102, "cycle": "MONTHLY"},
+                json={"plan_version_id": 2, "cycle": "MENSUAL"},
             )
 
         self.assertEqual(resp.status_code, 201)
@@ -216,7 +212,7 @@ class CU31SubscriptionPaymentsTestCase(unittest.TestCase):
 
         resp_checkout = self.client.post(
             "/api/v1/subscriptions/checkout",
-            json={"plan_version_id": 101, "cycle": "MONTHLY"},
+            json={"plan_version_id": 1, "cycle": "MENSUAL"},
         )
         pago_id = resp_checkout.json()["id_pago"]
 
@@ -240,19 +236,19 @@ class CU31SubscriptionPaymentsTestCase(unittest.TestCase):
     def test_confirmacion_idempotente_y_extension_de_vigencia(self):
         app.dependency_overrides[get_current_user] = lambda: self.admin_tenant1
 
-        # Crear checkout mensual para Plan BÃ¡sico (200.0 BOB)
+        # Crear checkout mensual para Plan Básico (200.0 BOB)
         resp_checkout = self.client.post(
             "/api/v1/subscriptions/checkout",
-            json={"plan_version_id": 101, "cycle": "MONTHLY"},
+            json={"plan_version_id": 1, "cycle": "MENSUAL"},
         )
         pago_id = resp_checkout.json()["id_pago"]
 
-        # Confirmar el pago vÃ­a webhook
+        # Confirmar el pago vía webhook
         resp_webhook = self._post_webhook(id_pago=pago_id)
         self.assertEqual(resp_webhook.status_code, 200)
         self.assertEqual(resp_webhook.json()["estado"], "PAGADO")
 
-        # Consultar suscripciÃ³n activa
+        # Consultar suscripción activa
         sub_resp = self.client.get("/api/v1/subscriptions/current")
         self.assertEqual(sub_resp.status_code, 200)
         sub_data = sub_resp.json()
@@ -261,7 +257,7 @@ class CU31SubscriptionPaymentsTestCase(unittest.TestCase):
         self.assertEqual(sub_data["derived_status"], "ACTIVE")
         fin_primero = sub_data["fecha_fin"]
 
-        # Reintento idÃ©ntico del webhook debe ser idempotente
+        # Reintento idéntico del webhook debe ser idempotente
         resp_webhook2 = self._post_webhook(id_pago=pago_id)
         self.assertEqual(resp_webhook2.status_code, 200)
 
@@ -273,8 +269,9 @@ class CU31SubscriptionPaymentsTestCase(unittest.TestCase):
         app.dependency_overrides[get_current_user] = lambda: self.admin_tenant1
         resp_checkout = self.client.post(
             "/api/v1/subscriptions/checkout",
-            json={"plan_version_id": 101, "cycle": "MONTHLY"},
+            json={"plan_version_id": 1, "cycle": "MONTHLY"},
         )
+        self.assertEqual(resp_checkout.status_code, 201)
         pago_id = resp_checkout.json()["id_pago"]
 
         resp_webhook = self._post_webhook(id_pago=pago_id, url="/")
@@ -282,58 +279,42 @@ class CU31SubscriptionPaymentsTestCase(unittest.TestCase):
         self.assertEqual(resp_webhook.json()["estado"], "PAGADO")
 
         db = self.SessionLocal()
-        pago = db.query(SubscriptionPayment).filter_by(
-            id_pago_suscripcion=pago_id
-        ).one()
+        pago = db.get(SubscriptionPayment, pago_id)
         self.assertEqual(pago.estado, "PAGADO")
         db.close()
 
-    def test_renovacion_mensual_inicia_el_dia_siguiente_al_vencimiento(self):
+    def test_renovacion_mensual_preserva_cierre_y_espera_fecha_efectiva(self):
         db = self.SessionLocal()
         ahora = datetime.now(timezone.utc)
+        inicio = ahora - timedelta(days=20)
         fin_vigente = ahora + timedelta(days=10)
-        db.add(
-            TenantSubscription(
-                id_clinica=1,
-                id_version_plan=101,
-                ciclo="MONTHLY",
-                fecha_inicio=ahora - timedelta(days=20),
-                fecha_fin=fin_vigente,
-                estado="ACTIVE",
-                row_version=1,
-            )
-        )
-        db.commit()
-        db.close()
-
+        sub=TenantSubscription(id_clinica=1,id_version_plan=1,ciclo='MENSUAL',fecha_inicio=inicio,
+            fecha_fin=fin_vigente,estado='ACTIVE',billing_anchor_day=inicio.day,row_version=1)
+        db.add(sub);db.commit();db.close()
         app.dependency_overrides[get_current_user] = lambda: self.admin_tenant1
-        resp_checkout = self.client.post(
-            "/api/v1/subscriptions/checkout",
-            json={"plan_version_id": 102, "cycle": "MONTHLY"},
-        )
-        pago_id = resp_checkout.json()["id_pago"]
-        self.assertEqual(self._post_webhook(id_pago=pago_id).status_code, 200)
+        resp=self.client.post('/api/v1/subscriptions/checkout',json={'plan_version_id':1,'cycle':'MENSUAL'})
+        self.assertEqual(resp.status_code,201)
+        self.assertEqual(self._post_webhook(id_pago=resp.json()['id_pago']).status_code,200)
+        with self.SessionLocal() as db:
+            sub=db.query(TenantSubscription).filter_by(id_clinica=1).first()
+            self.assertEqual(utc(sub.fecha_inicio),inicio)
+            self.assertEqual(utc(sub.fecha_fin),fin_vigente)
+            payment=db.get(SubscriptionPayment,resp.json()['id_pago'])
+            self.assertEqual(utc(payment.period_start),fin_vigente)
+            self.assertEqual(utc(payment.period_end),next_month(fin_vigente,inicio.day))
 
-        db = self.SessionLocal()
-        sub = db.query(TenantSubscription).filter_by(id_clinica=1).first()
-        inicio = sub.fecha_inicio
-        fin = sub.fecha_fin
-        if inicio.tzinfo is None:
-            inicio = inicio.replace(tzinfo=timezone.utc)
-        if fin.tzinfo is None:
-            fin = fin.replace(tzinfo=timezone.utc)
-        esperado_inicio = fin_vigente + timedelta(days=1)
-        self.assertEqual(inicio.date(), esperado_inicio.date())
-        self.assertEqual(fin.date(), (esperado_inicio + timedelta(days=29)).date())
-        db.close()
+    def test_ciclo_anual_se_rechaza(self):
+        app.dependency_overrides[get_current_user] = lambda: self.admin_tenant1
+        response=self.client.post('/api/v1/subscriptions/checkout',json={'plan_version_id':1,'cycle':'ANNUAL'})
+        self.assertEqual(response.status_code,422)
 
     def test_descargar_comprobante_pdf_y_aislamiento_entre_tenants(self):
         app.dependency_overrides[get_current_user] = lambda: self.admin_tenant1
 
-        # Crear y pagar suscripciÃ³n
+        # Crear y pagar suscripción
         resp_checkout = self.client.post(
             "/api/v1/subscriptions/checkout",
-            json={"plan_version_id": 101, "cycle": "MONTHLY"},
+            json={"plan_version_id": 1, "cycle": "MENSUAL"},
         )
         pago_id = resp_checkout.json()["id_pago"]
 

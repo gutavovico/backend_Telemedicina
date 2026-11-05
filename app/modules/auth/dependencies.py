@@ -1,4 +1,5 @@
 from typing import List, Optional
+from starlette.requests import HTTPConnection
 
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -80,7 +81,8 @@ def _resolve_current_user(
 
 def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    connection: HTTPConnection = None,
 ) -> Usuario:
     """Usuario autenticado con acceso completo a la API."""
     user = _resolve_current_user(credentials, db)
@@ -90,6 +92,9 @@ def get_current_user(
             detail="Debe cambiar su contraseña temporal antes de continuar",
             headers={"X-Must-Change-Password": "true"},
         )
+    if connection is not None:
+        from app.modules.tenants.subscription_changes.access import check_authenticated_endpoint
+        check_authenticated_endpoint(db, user, connection)
     return user
 
 

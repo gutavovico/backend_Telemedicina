@@ -1,3 +1,4 @@
+from sqlalchemy import CheckConstraint, Index, UniqueConstraint, text
 import uuid
 from sqlalchemy import (
     BigInteger,
@@ -119,7 +120,7 @@ class TenantSubscription(Base):
     id_version_plan = Column(
         BigInteger().with_variant(Integer, "sqlite"),
         ForeignKey("versiones_plan.id", ondelete="RESTRICT"),
-        nullable=True,
+        nullable=False,
         index=True,
     )
     id_plan_version = Column(String(36), ForeignKey("plan_versions.id_plan_version"), nullable=True)
@@ -127,6 +128,7 @@ class TenantSubscription(Base):
     fecha_inicio = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     fecha_fin = Column(DateTime(timezone=True), nullable=False)
     dias_gracia = Column(Integer, nullable=False, default=7, server_default="7")
+    billing_anchor_day = Column(Integer, nullable=True)
     estado = Column(String(20), nullable=False, default="ACTIVE", server_default="ACTIVE")  # TRIALING, ACTIVE, PAST_DUE, EXPIRED, CANCELLED
     row_version = Column(Integer, nullable=False, default=1, server_default="1")
     fecha_actualizacion = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -147,12 +149,18 @@ class SubscriptionPayment(Base):
     id_version_plan = Column(
         BigInteger().with_variant(Integer, "sqlite"),
         ForeignKey("versiones_plan.id", ondelete="RESTRICT"),
-        nullable=True,
+        nullable=False,
         index=True,
     )
     id_plan_version = Column(String(36), ForeignKey("plan_versions.id_plan_version"), nullable=True)
     ciclo = Column(String(20), nullable=False)
-    monto = Column(Numeric(10, 2), nullable=False)
+    monto = Column(Numeric(14, 2), nullable=False)
+    purpose = Column(String(20), nullable=False, default="RENEWAL", server_default="RENEWAL")
+    source_row_version = Column(Integer, nullable=True)
+    application_status = Column(String(24), nullable=False, default="PENDING", server_default="PENDING")
+    application_reason = Column(String(250), nullable=True)
+    period_start = Column(DateTime(timezone=True), nullable=True)
+    period_end = Column(DateTime(timezone=True), nullable=True)
     moneda = Column(String(10), nullable=False, default="BOB", server_default="BOB")
     estado = Column(String(20), nullable=False, default="PENDING", server_default="PENDING")  # PENDING, PAGADO, FALLIDO, CANCELADO
     stripe_session_id = Column(String(255), unique=True, nullable=True, index=True)
@@ -166,3 +174,31 @@ class SubscriptionPayment(Base):
     suscripcion = relationship("TenantSubscription")
     plan = relationship("PlanVersion")
     plan_canonico = relationship("VersionPlan", foreign_keys=[id_version_plan])
+
+
+class SubscriptionChange(Base):
+    __tablename__ = "subscription_changes"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=False, index=True)
+    id_suscripcion = Column(String(36), ForeignKey("tenant_subscriptions.id_suscripcion"), nullable=False)
+    requested_by = Column(BigInteger, ForeignKey("usuarios.id_usuario"), nullable=False)
+    source_version_id = Column(BigInteger, ForeignKey("versiones_plan.id", ondelete="RESTRICT"), nullable=False)
+    source_row_version = Column(Integer, nullable=False)
+    target_version_id = Column(BigInteger, ForeignKey("versiones_plan.id", ondelete="RESTRICT"), nullable=True)
+    operation = Column(String(20), nullable=False)
+    status = Column(String(24), nullable=False)
+    amount = Column(Numeric(14,2), nullable=False, default=0)
+    effective_at = Column(DateTime(timezone=True), nullable=False)
+    requested_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    applied_at = Column(DateTime(timezone=True), nullable=True)
+    payment_id = Column(String(36), ForeignKey("subscription_payments.id_pago_suscripcion"), unique=True, nullable=True)
+    idempotency_key = Column(String(64), nullable=False)
+    reason = Column(String(250), nullable=True)
+    __table_args__ = (
+        UniqueConstraint("id_clinica", "idempotency_key", name="uq_change_tenant_key"),
+        CheckConstraint("operation IN ('IMMEDIATE','NEXT_CYCLE','CANCEL')", name="ck_change_operation"),
+        CheckConstraint("amount >= 0", name="ck_change_amount"),
+        Index("uq_subscription_pending_change", "id_suscripcion", unique=True,
+              postgresql_where=text("status IN ('WAITING_PAYMENT','SCHEDULED','WAITING_RENEWAL')"),
+              sqlite_where=text("status IN ('WAITING_PAYMENT','SCHEDULED','WAITING_RENEWAL')")),
+    )

@@ -138,6 +138,8 @@ def endpoint_synchronize_subscription_checkout(
         id_pago=pago.id_pago_suscripcion,
         estado=pago.estado,
         confirmado=pago.estado == "PAGADO",
+        application_status=pago.application_status, effective_at=pago.period_start if pago.purpose == "RENEWAL" else pago.fecha_pago,
+        application_reason=pago.application_reason,
         checkout_url=pago.url_checkout,
         expira_en=pago.expira_en,
     )

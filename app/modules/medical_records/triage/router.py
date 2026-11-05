@@ -10,7 +10,7 @@ from app.modules.auth.models import Usuario
 from app.modules.medical_records.triage.schemas import TriageForm, TriageResponse, TriageRecordResponse
 from app.modules.medical_records.triage.service import obtener_triaje_preliminar, analizar_triaje_ia
 
-router = APIRouter(prefix="/triaje", tags=["Triaje y Urgencias"])
+router = APIRouter(prefix="/triaje", tags=["Triaje y Urgencias"], dependencies=[Depends(get_current_user)])
 
 @router.post("/preliminar", response_model=TriageResponse, summary="Calcular nivel de triaje preliminar")
 def preliminar(form: TriageForm):
