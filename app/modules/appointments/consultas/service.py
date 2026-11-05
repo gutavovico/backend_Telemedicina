@@ -1,3 +1,4 @@
+from fastapi import HTTPException, status
 from datetime import date, datetime, time
 from typing import List, Optional
 from sqlalchemy import func, or_
@@ -12,7 +13,8 @@ from app.modules.appointments.consultas.schemas import (
     HorarioSlot,
 )
 from app.modules.medical_records.models import Paciente
-from app.modules.auth.models import Usuario
+from app.modules.auth.models import Clinica, Usuario
+from app.core.tenant_status import CANONICAL_SUSPENDED, canonical_tenant_status
 
 HORARIOS_ESTANDAR = [
     "08:00", "08:30", "09:00", "09:30", "10:00", "10:30",
@@ -93,6 +95,14 @@ def crear_cita(db: Session, datos: CitaCreate) -> CitaResponse:
     medico = db.query(Medico).filter(Medico.id_medico == datos.id_medico).first()
     if not medico:
         raise ValueError(f"El médico con ID {datos.id_medico} no existe")
+    clinica_id = medico.id_clinica or paciente.id_clinica
+    if clinica_id:
+        clinica = db.query(Clinica).filter(Clinica.id_clinica == clinica_id).first()
+        if clinica and canonical_tenant_status(clinica.estado) == CANONICAL_SUSPENDED:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Operación no permitida: el tenant se encuentra suspendido",
+            )
 
     cita_ocupada = (
         db.query(Cita)

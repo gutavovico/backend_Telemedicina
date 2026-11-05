@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # Credenciales temporales del alta institucional (CU32), sin dependencia de SMTP.
+    TEMP_CREDENTIAL_TTL_MINUTES: int = 30
+    TEMP_CREDENTIAL_MAX_REVEALS: int = 3
+    # Si se deja vacia, se deriva una clave estable del secreto JWT del servidor.
+    TEMP_CREDENTIAL_ENCRYPTION_KEY: str = ""
+
     # Recuperación de contraseña (CU23)
     # Clave usada para derivar el código de 6 dígitos con HMAC (sin BD)
     JWT_RESET_SECRET_KEY: str = "clave_secreta_super_segura_telemedicina_2026_reset_code"
@@ -120,6 +126,14 @@ class Settings(BaseSettings):
     PAYMENT_MOBILE_CANCEL_URL: str = "http://localhost:8000/pagos/retorno?estado=cancelado"
     # Vigencia de la sesión de pago (minutos).
     PAYMENT_SESSION_TTL_MINUTES: int = 30
+
+    # CU31 - Suscripciones SaaS del tenant (reutiliza la pasarela Stripe).
+    SUBSCRIPTION_WEB_SUCCESS_URL: str = (
+        "http://localhost:4200/admin/suscripcion?checkout=success&session_id={CHECKOUT_SESSION_ID}"
+    )
+    SUBSCRIPTION_WEB_CANCEL_URL: str = (
+        "http://localhost:4200/admin/suscripcion?checkout=cancelled"
+    )
 
     # CU22: interpretación de texto con Groq (nunca se envía al cliente).
     GROQ_API_KEY: SecretStr = SecretStr("")

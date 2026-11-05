@@ -3,8 +3,11 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.modules.auth.router import router as auth_router
-from app.modules.auth.tenant.router import router as tenant_router
 from app.modules.auth.clinicas.router import router as clinicas_router
+from app.modules.tenants.tenant_management.router import router as tenant_management_router
+from app.modules.tenants.subscription_payments.router import router as subscription_payments_router
+from app.modules.tenants.public_onboarding.router import router as public_onboarding_router
+from app.modules.tenants.deactivation_requests.router import router as deactivation_requests_router
 from app.modules.auth.users_management.router import router as users_management_router
 from app.modules.auth.roles_permissions.router import router as roles_permissions_router
 from app.modules.auth.audit.router import router as audit_router
@@ -84,10 +87,14 @@ async def strip_backend_api_prefix(request: Request, call_next):
 app.include_router(auth_router)
 
 # Contexto de Tenant y Clínicas (SaaS multitenant)
-app.include_router(tenant_router)
-app.include_router(tenant_router, prefix="/api/v1")
 app.include_router(clinicas_router)
 app.include_router(clinicas_router, prefix="/api/v1")
+app.include_router(tenant_management_router)
+app.include_router(tenant_management_router, prefix="/api/v1")
+app.include_router(subscription_payments_router)
+app.include_router(subscription_payments_router, prefix="/api/v1")
+app.include_router(public_onboarding_router)
+app.include_router(deactivation_requests_router)
 
 # Gestión de Usuarios, Roles y Auditoría
 app.include_router(users_management_router)
@@ -111,16 +118,16 @@ app.include_router(analytics_router)
 app.include_router(communications_router)
 app.include_router(communications_router, prefix="/api/v1")
 
-# Pagos de citas y teleconsultas + comprobantes (CU19)
-app.include_router(payments_router)
-app.include_router(payments_router, prefix="/api/v1")
-
 # Respaldos de base de datos
 app.include_router(backup_router)
 app.include_router(planes_router)
 app.add_exception_handler(PlanError, plan_error_handler)
 
-# Formatos de error uniforme
+# Pagos de citas y teleconsultas + comprobantes (CU19)
+app.include_router(payments_router)
+app.include_router(payments_router, prefix="/api/v1")
+
+# CU16: formato de error uniforme {"detail", "code"}
 app.add_exception_handler(PrescriptionError, prescription_error_handler)
 app.add_exception_handler(TreatmentError, treatment_error_handler)
 # CU19: errores de negocio de pagos con su código HTTP.

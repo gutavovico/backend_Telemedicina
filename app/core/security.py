@@ -5,6 +5,8 @@ if not hasattr(bcrypt, "__about__"):
 
 import hashlib
 import hmac
+import secrets
+import string
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -12,6 +14,7 @@ from typing import Any, Dict, Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import HTTPException, status
+from cryptography.fernet import Fernet, InvalidToken
 from app.core.config import settings
 
 # Password hashing context
@@ -26,6 +29,46 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a plaintext password against a hashed password."""
     return pwd_context.verify(plain_password, hashed_password)
+
+
+def generate_temporary_password(length: int = 16) -> str:
+    """Genera una contraseña temporal aleatoria y fácil de copiar."""
+    alphabet = string.ascii_letters + string.digits + "!@#$%"
+    while True:
+        password = "".join(secrets.choice(alphabet) for _ in range(length))
+        if (
+            any(c.islower() for c in password)
+            and any(c.isupper() for c in password)
+            and any(c.isdigit() for c in password)
+            and any(c in "!@#$%" for c in password)
+        ):
+            return password
+
+
+def _temporary_credential_fernet() -> Fernet:
+    """Cifra credenciales temporales con una clave de servidor estable."""
+    configured = settings.TEMP_CREDENTIAL_ENCRYPTION_KEY.strip()
+    if configured:
+        try:
+            return Fernet(configured.encode("ascii"))
+        except (ValueError, UnicodeError):
+            raise RuntimeError("TEMP_CREDENTIAL_ENCRYPTION_KEY no es una clave Fernet válida") from None
+
+    digest = hashlib.sha256(
+        f"telemedicina:temp-credential:{settings.JWT_SECRET_KEY}".encode("utf-8")
+    ).digest()
+    return Fernet(__import__("base64").urlsafe_b64encode(digest))
+
+
+def encrypt_temporary_credential(value: str) -> str:
+    return _temporary_credential_fernet().encrypt(value.encode("utf-8")).decode("ascii")
+
+
+def decrypt_temporary_credential(value: str) -> Optional[str]:
+    try:
+        return _temporary_credential_fernet().decrypt(value.encode("ascii")).decode("utf-8")
+    except (InvalidToken, ValueError, UnicodeError):
+        return None
 
 
 def new_jti() -> str:

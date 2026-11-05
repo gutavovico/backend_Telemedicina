@@ -26,7 +26,10 @@ class ClinicaListResponse(BaseModel):
 
 
 class ClinicaEstadoUpdate(BaseModel):
-    estado: str = Field(..., pattern="^(ACTIVO|INACTIVO|SUSPENDIDO)$")
+    estado: str = Field(
+        ...,
+        pattern="^(ACTIVO|INACTIVO|SUSPENDIDO|ACTIVE|INACTIVE|SUSPENDED)$",
+    )
 
 
 class ClinicaEstadoResponse(BaseModel):

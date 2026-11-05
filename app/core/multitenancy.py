@@ -18,6 +18,7 @@ from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.tenant_status import CANONICAL_ACTIVE, canonical_tenant_status
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import Clinica, Usuario
 
@@ -123,8 +124,7 @@ def _get_clinica_or_raise(db: Session, tenant_id: int) -> Clinica:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Clínica no encontrada",
         )
-    estado = (clinica.estado or "").upper()
-    if estado != "ACTIVO":
+    if canonical_tenant_status(clinica.estado) != CANONICAL_ACTIVE:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="La clínica no está activa",

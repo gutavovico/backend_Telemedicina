@@ -56,6 +56,12 @@ class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    must_change_password: bool = False
+
+
+class ChangeTemporaryPasswordRequest(BaseModel):
+    nueva_password: str = Field(..., min_length=8, max_length=100)
+    confirmar_password: str = Field(..., min_length=8, max_length=100)
 
 
 class RefreshTokenRequest(BaseModel):

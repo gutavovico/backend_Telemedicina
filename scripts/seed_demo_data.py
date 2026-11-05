@@ -8,7 +8,7 @@ from pathlib import Path
 # Agregar directorio raíz al PYTHONPATH
 sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), "..")))
 
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal, engine
 from app.core.security import hash_password
@@ -28,6 +28,24 @@ from app.modules.medical_records.hce.models import HistoriaClinica, Consulta, Di
 from app.modules.medical_records.clinical_documents.models import DocumentoClinico
 from app.modules.communications.models import MensajeChatCita
 from app.modules.medical_records.prescriptions.models import Medicamento
+
+
+def _resync_pk_sequence(db: Session, tabla: str, columna: str) -> None:
+    """Alinea la secuencia del PK tras inserts con id explícito (solo PostgreSQL).
+
+    El seed crea clínicas con id_clinica=1 y 2 sin usar la secuencia, por lo que
+    queda en 1 y el primer insert posterior (p. ej. aprobar un alta en CU32)
+    choca con «clinicas_pkey».
+    """
+    if db.bind.dialect.name != "postgresql":
+        return
+    seq = db.execute(
+        text("SELECT pg_get_serial_sequence(:t, :c)"), {"t": tabla, "c": columna}
+    ).scalar()
+    if not seq:
+        return
+    max_id = db.execute(text(f'SELECT COALESCE(MAX("{columna}"), 0) FROM "{tabla}"')).scalar()
+    db.execute(text("SELECT setval(:s, GREATEST(:v, 1))"), {"s": seq, "v": max_id})
 
 
 def _pdf_placeholder_bytes(titulo: str, lineas: list | None = None) -> bytes:
@@ -137,6 +155,7 @@ def seed_all():
             print("  [=] Clínica Norte verificada")
 
         db.flush()
+        _resync_pk_sequence(db, "clinicas", "id_clinica")
 
         # -------------------------------------------------------------
         # 2. Roles Canónicos

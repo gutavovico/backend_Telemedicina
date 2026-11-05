@@ -28,6 +28,9 @@ from app.modules.medical_records.tratamientos.avisos_models import (  # noqa: F4
     TratamientoAviso, TratamientoDispositivo, TratamientoEntregaPush, TratamientoCursor,
 )
 from app.modules.backup.models import BackupConfig  # noqa: F401
+from app.modules.tenants.models import (  # noqa: F401
+    PlanVersion, TenantRequest, TenantRequestTrackingAudit,
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
