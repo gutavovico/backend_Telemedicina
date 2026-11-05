@@ -118,13 +118,11 @@ app.include_router(analytics_router)
 app.include_router(communications_router)
 app.include_router(communications_router, prefix="/api/v1")
 
-
 # Respaldos de base de datos
 app.include_router(backup_router)
 app.include_router(planes_router)
 app.add_exception_handler(PlanError, plan_error_handler)
 
-# Formatos de error uniforme
 # Pagos de citas y teleconsultas + comprobantes (CU19)
 app.include_router(payments_router)
 app.include_router(payments_router, prefix="/api/v1")
@@ -134,7 +132,6 @@ app.add_exception_handler(PrescriptionError, prescription_error_handler)
 app.add_exception_handler(TreatmentError, treatment_error_handler)
 # CU19: errores de negocio de pagos con su código HTTP.
 app.add_exception_handler(PagoError, pago_error_handler)
-
 
 
 @app.get("/", tags=["General"], summary="Health Check")
