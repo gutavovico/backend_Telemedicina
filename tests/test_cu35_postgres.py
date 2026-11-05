@@ -82,7 +82,7 @@ def isolated_database(target='cu35_cu18_convergencia_023'):
         root.dispose()
 
 
-def seed(db, subscriptions=True, first_price='200.00'):
+def seed(db, subscriptions=True, first_price='200.00', first_conditions=None):
     for i in (1,2,3):
         db.add(Clinica(id_clinica=i,nombre=f'Prueba PG {i}',estado='ACTIVE'))
     db.flush()
@@ -96,9 +96,13 @@ def seed(db, subscriptions=True, first_price='200.00'):
     db.flush()
     for pid,price,doctors,consults in ((1,first_price,10,100),(2,'500.00',20,300),(3,'100.00',5,50)):
         db.add(Plan(id=pid,codigo=f'PG{pid}',activo=True,version_actual=1));db.flush()
-        db.add(VersionPlan(id=pid,plan_id=pid,numero=1,nombre=f'Plan {pid}',precio_mensual=price,
+        version=VersionPlan(id=pid,plan_id=pid,numero=1,nombre=f'Plan {pid}',precio_mensual=price,
             moneda='BOB',ciclo='MENSUAL',limite_medicos=doctors,limite_sedes=None,limite_consultas=consults,
-            servicios_incluidos=['AGENDA_TELECONSULTA'],tarifas_excedentes=[],demora_pago_dias=0,creado_por=90))
+            servicios_incluidos=['AGENDA_TELECONSULTA'],tarifas_excedentes=[],demora_pago_dias=0,creado_por=90)
+        if pid==1:
+            for key,value in (first_conditions or {}).items():
+                setattr(version,key,value)
+        db.add(version)
     db.flush()
     # ORM fixtures with explicit IDs must also advance PostgreSQL sequences.
     for table,column in (('planes','id'),('versiones_plan','id'),('clinicas','id_clinica'),('roles','id_rol'),('usuarios','id_usuario')):
@@ -286,11 +290,21 @@ def test_cu18_populated_upgrade_requires_anchor_and_preserves_exact_snapshots():
         sessions=sessionmaker(engine)
         start=datetime(2026,11,5,5,29,41,470415,tzinfo=timezone.utc)
         end=datetime(2026,12,5,5,29,41,470415,tzinfo=timezone.utc)
+        conditions={'limite_medicos':10,'limite_sedes':5,'limite_consultas':100,
+                    'servicios_incluidos':['RECETAS_DIGITALES','LISTA_ESPERA','SUBDOMINIO_PROPIO',
+                                          'INTEGRACIONES','LABORATORIO'],
+                    'tarifas_excedentes':[],'demora_pago_dias':7}
         with sessions() as db:
-            seed(db,subscriptions=False,first_price='125.00')
+            seed(db,subscriptions=False,first_price='125.00',first_conditions=conditions)
             db.execute(text("INSERT INTO tenant_subscriptions (id_suscripcion,id_clinica,id_version_plan,ciclo,fecha_inicio,fecha_fin,estado,row_version) VALUES ('canonical-existing',1,1,'MONTHLY',:start,:end,'ACTIVE',2)"),{'start':start,'end':end})
-            db.execute(text("INSERT INTO subscription_payments (id_pago_suscripcion,id_suscripcion,id_clinica,id_usuario,id_version_plan,ciclo,monto,moneda,estado,fecha_pago) VALUES ('canonical-paid','canonical-existing',1,1,1,'MONTHLY',125,'BOB','PAGADO',:paid)"),{'paid':start-timedelta(microseconds=169141)})
+            db.execute(text("INSERT INTO subscription_payments (id_pago_suscripcion,id_suscripcion,id_clinica,id_usuario,id_version_plan,ciclo,monto,moneda,estado,fecha_pago,fecha_creacion) VALUES ('canonical-paid','canonical-existing',1,1,1,'MONTHLY',125,'BOB','PAGADO',:paid,:created)"),{'paid':start-timedelta(microseconds=169141),'created':datetime(2026,11,5,5,7,34,220473,tzinfo=timezone.utc)})
             db.commit()
+        with engine.connect() as conn:
+            historical={table:dict(conn.execute(text(f'SELECT * FROM {table} WHERE {pk}=:id'),
+                         {'id':row_id}).mappings().one()) for table,pk,row_id in (
+                             ('tenant_subscriptions','id_suscripcion','canonical-existing'),
+                             ('subscription_payments','id_pago_suscripcion','canonical-paid'),
+                             ('versiones_plan','id',1))}
         with pytest.raises(RuntimeError,match='billing_anchor_map'):
             migrate_database(database,'head')
         with engine.connect() as conn:
@@ -311,5 +325,12 @@ def test_cu18_populated_upgrade_requires_anchor_and_preserves_exact_snapshots():
             assert payment.plan_canonico.precio_mensual==Decimal('125.00')
         with engine.connect() as conn:
             assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='cu35_cu18_convergencia_023'
+            for table,pk,row_id in (('tenant_subscriptions','id_suscripcion','canonical-existing'),
+                                   ('subscription_payments','id_pago_suscripcion','canonical-paid'),
+                                   ('versiones_plan','id',1)):
+                after=conn.execute(text(f'SELECT * FROM {table} WHERE {pk}=:id'),
+                                   {'id':row_id}).mappings().one()
+                assert {key:after[key] for key in historical[table]}==historical[table]
+            assert conn.scalar(text("SELECT count(*) FROM subscription_payments WHERE id_suscripcion='canonical-existing'"))==1
             assert all(inspect(conn).has_table(t) for t in
                        ('evaluaciones_asistencia','interacciones_catalogo','alertas_interaccion','subscription_changes'))

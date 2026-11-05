@@ -97,3 +97,11 @@ Sí se incluyen fixtures exclusivos de tests que nunca se cargan al iniciar app.
 CONFIG-Y-CU18.md sigue solo local. Los PR incluyen las listas de archivos del
 commit respectivo y no alteran los submódulos specs ni cambios Flutter.
 Ver DESPLIEGUE-CU35.md y PR-CU35.md para pasos posteriores.
+
+## Ampliación del fixture canónico
+
+Se reconsultaron en solo lectura las condiciones completas de versiones_plan.id=1
+y su correspondencia con el pago de 125.00 BOB. La regresión poblada conserva
+todos los campos históricos anteriores a la migración, no solo precio y fechas.
+No se requieren mapas de versión para esas dos filas; billing_anchor_map sigue
+siendo obligatorio y pendiente de evidencia original. Véase VALIDACION-VERSION-1.md.
