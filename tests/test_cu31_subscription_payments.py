@@ -103,7 +103,13 @@ class CU31SubscriptionPaymentsTestCase(unittest.TestCase):
         self.db.close()
         app.dependency_overrides.pop(get_current_user, None)
 
-    def _post_webhook(self, id_pago=None, session_id=None, tipo="checkout.session.completed"):
+    def _post_webhook(
+        self,
+        id_pago=None,
+        session_id=None,
+        tipo="checkout.session.completed",
+        url="/api/v1/payments/webhook/stripe/subscription",
+    ):
         evento = {
             "id": "evt_cu31",
             "type": tipo,
@@ -124,7 +130,7 @@ class CU31SubscriptionPaymentsTestCase(unittest.TestCase):
             self.webhook_secret.encode("utf-8"), firmado, hashlib.sha256
         ).hexdigest()
         return self.client.post(
-            "/api/v1/payments/webhook/stripe/subscription",
+            url,
             content=payload,
             headers={
                 "Content-Type": "application/json",
@@ -262,6 +268,25 @@ class CU31SubscriptionPaymentsTestCase(unittest.TestCase):
         # La fecha fin no debe haber cambiado
         sub_resp2 = self.client.get("/api/v1/subscriptions/current")
         self.assertEqual(sub_resp2.json()["fecha_fin"], fin_primero)
+
+    def test_webhook_raiz_despacha_suscripcion_por_metadatos(self):
+        app.dependency_overrides[get_current_user] = lambda: self.admin_tenant1
+        resp_checkout = self.client.post(
+            "/api/v1/subscriptions/checkout",
+            json={"plan_version_id": 101, "cycle": "MONTHLY"},
+        )
+        pago_id = resp_checkout.json()["id_pago"]
+
+        resp_webhook = self._post_webhook(id_pago=pago_id, url="/")
+        self.assertEqual(resp_webhook.status_code, 200)
+        self.assertEqual(resp_webhook.json()["estado"], "PAGADO")
+
+        db = self.SessionLocal()
+        pago = db.query(SubscriptionPayment).filter_by(
+            id_pago_suscripcion=pago_id
+        ).one()
+        self.assertEqual(pago.estado, "PAGADO")
+        db.close()
 
     def test_renovacion_mensual_inicia_el_dia_siguiente_al_vencimiento(self):
         db = self.SessionLocal()

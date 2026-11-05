@@ -1,7 +1,10 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+import json
+
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
+from app.core.database import get_db
 from app.modules.auth.router import router as auth_router
 from app.modules.auth.clinicas.router import router as clinicas_router
 from app.modules.tenants.tenant_management.router import router as tenant_management_router
@@ -147,3 +150,54 @@ def health_check():
         "app": "Telemedicina API",
         "version": "1.0.0"
     }
+
+
+@app.post(
+    "/",
+    tags=["Pagos"],
+    summary="Dispatcher del webhook Stripe configurado en la raíz",
+)
+async def stripe_webhook_dispatcher(
+    request: Request,
+    db=Depends(get_db),
+):
+    """Despacha un evento Stripe entre pagos CU19 y suscripciones CU31.
+
+    Stripe permite una sola URL por endpoint. El endpoint configurado en el
+    panel de Stripe es la raíz del backend, por lo que los metadatos de la
+    sesión permiten seleccionar el flujo sin duplicar secretos de webhook.
+    """
+    payload = await request.body()
+    signature = request.headers.get("Stripe-Signature", "")
+
+    try:
+        evento = json.loads(payload.decode("utf-8"))
+    except Exception:
+        evento = {}
+
+    sesion = (evento.get("data") or {}).get("object") or {}
+    metadata = sesion.get("metadata") or {}
+    es_suscripcion = (
+        metadata.get("tipo") == "suscripcion"
+        or bool(metadata.get("id_pago_suscripcion"))
+        or str(sesion.get("client_reference_id") or "").startswith("suscripcion-")
+    )
+
+    if es_suscripcion:
+        from app.modules.tenants.subscription_payments.service import (
+            procesar_webhook_suscripcion,
+        )
+
+        return procesar_webhook_suscripcion(
+            db=db,
+            payload=payload,
+            signature_header=signature,
+        )
+
+    from app.modules.payments.service import procesar_webhook
+
+    return procesar_webhook(
+        db=db,
+        payload=payload,
+        signature_header=signature,
+    )

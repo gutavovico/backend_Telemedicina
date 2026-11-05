@@ -134,6 +134,36 @@ services:
         sync: false
       - key: JWT_RESET_SECRET_KEY
         sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_API_BASE_URL
+        value: https://api.stripe.com
+      - key: STRIPE_CURRENCY
+        value: bob
+      - key: STRIPE_TIMEOUT_SECONDS
+        value: 20
+      - key: STRIPE_WEBHOOK_TOLERANCE_SECONDS
+        value: 300
+      - key: PAYMENT_PUBLIC_BASE_URL
+        value: https://backend-telemedicina.onrender.com
+      - key: PAYMENT_WEB_SUCCESS_URL
+        value: https://frontend-telemedicina-weld.vercel.app/pagos/resultado
+      - key: PAYMENT_WEB_CANCEL_URL
+        value: https://frontend-telemedicina-weld.vercel.app/mis-citas
+      - key: PAYMENT_MOBILE_SUCCESS_URL
+        value: https://backend-telemedicina.onrender.com/pagos/retorno?estado=exito
+      - key: PAYMENT_MOBILE_CANCEL_URL
+        value: https://backend-telemedicina.onrender.com/pagos/retorno?estado=cancelado
+      - key: PAYMENT_SESSION_TTL_MINUTES
+        value: 30
+      - key: SUBSCRIPTION_WEB_SUCCESS_URL
+        value: https://frontend-telemedicina-weld.vercel.app/admin/suscripcion?checkout=success&session_id={CHECKOUT_SESSION_ID}
+      - key: SUBSCRIPTION_WEB_CANCEL_URL
+        value: https://frontend-telemedicina-weld.vercel.app/admin/suscripcion?checkout=cancelled
       - key: CU17_FCM_PROJECT_ID
         value: telemedicina-si2
       - key: CU17_FCM_SERVICE_ACCOUNT_FILE
