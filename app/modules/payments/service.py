@@ -28,6 +28,7 @@ from app.modules.appointments.models import Cita, Medico, ServicioMedico
 from app.modules.auth.models import Clinica, Usuario
 from app.modules.medical_records.clinical_documents.storage import storage
 from app.modules.medical_records.models import Paciente
+from app.modules.notificaciones.service import notificar_pago_confirmado
 from app.modules.payments.models import Comprobante, Pago
 from app.modules.payments.schemas import (
     CheckoutResponse,
@@ -457,6 +458,9 @@ def _finalizar_pago(db: Session, pago: Pago, session_payload: Optional[Dict[str,
 
     db.commit()
     db.refresh(pago)
+    # CU19: aviso push solo a la app Android. Un fallo del proveedor no revierte
+    # el pago porque el servicio captura cualquier excepción.
+    notificar_pago_confirmado(db, pago)
     return pago
 
 
