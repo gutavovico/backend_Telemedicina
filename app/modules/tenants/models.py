@@ -30,6 +30,13 @@ class TenantRequest(Base):
     responsable_correo = Column(String(150), nullable=False)
     responsable_telefono = Column(String(30), nullable=True)
 
+    # Referencia canónica CU34; ``plan_version_id`` se conserva para lectura legacy.
+    id_version_plan = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        ForeignKey("versiones_plan.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     plan_version_id = Column(String(36), nullable=True)
     documentos_metadata = Column(Text, nullable=True)  # JSON serializado con nombre, mime, sha256, path
     tracking_code = Column(String(64), unique=True, index=True, nullable=False)
@@ -107,8 +114,16 @@ class TenantSubscription(Base):
     id_suscripcion = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=False, unique=True, index=True)
     tenant_id = Column(String(36), nullable=True)
-    id_plan_version = Column(String(36), ForeignKey("plan_versions.id_plan_version"), nullable=False)
-    ciclo = Column(String(20), nullable=False, default="MONTHLY", server_default="MONTHLY")  # MONTHLY, ANNUAL
+    # Referencia canónica CU34. El UUID legacy se conserva únicamente para
+    # trazabilidad durante la transición Expand -> Backfill -> Contract.
+    id_version_plan = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        ForeignKey("versiones_plan.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    id_plan_version = Column(String(36), ForeignKey("plan_versions.id_plan_version"), nullable=True)
+    ciclo = Column(String(20), nullable=False, default="MONTHLY", server_default="MONTHLY")
     fecha_inicio = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     fecha_fin = Column(DateTime(timezone=True), nullable=False)
     dias_gracia = Column(Integer, nullable=False, default=7, server_default="7")
@@ -117,6 +132,7 @@ class TenantSubscription(Base):
     fecha_actualizacion = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     plan = relationship("PlanVersion")
+    plan_canonico = relationship("VersionPlan", foreign_keys=[id_version_plan])
     clinica = relationship("Clinica")
 
 
@@ -128,7 +144,13 @@ class SubscriptionPayment(Base):
     id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=False, index=True)
     tenant_id = Column(String(36), nullable=True)
     id_usuario = Column(BigInteger, ForeignKey("usuarios.id_usuario"), nullable=False)
-    id_plan_version = Column(String(36), ForeignKey("plan_versions.id_plan_version"), nullable=False)
+    id_version_plan = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        ForeignKey("versiones_plan.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    id_plan_version = Column(String(36), ForeignKey("plan_versions.id_plan_version"), nullable=True)
     ciclo = Column(String(20), nullable=False)
     monto = Column(Numeric(10, 2), nullable=False)
     moneda = Column(String(10), nullable=False, default="BOB", server_default="BOB")
@@ -143,3 +165,4 @@ class SubscriptionPayment(Base):
 
     suscripcion = relationship("TenantSubscription")
     plan = relationship("PlanVersion")
+    plan_canonico = relationship("VersionPlan", foreign_keys=[id_version_plan])

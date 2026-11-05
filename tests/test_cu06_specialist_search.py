@@ -83,10 +83,10 @@ class CU06SpecialistSearchTestCase(unittest.TestCase):
 
             # Médicos: Medico 10 en Clinica 1, Medico 11 en Clinica 1, Medico 12 en Clinica 2
             conn.exec_driver_sql("""
-                INSERT INTO medicos (id_medico, id_usuario, id_clinica, matricula_profesional, estado)
-                VALUES (10, 10, 1, 'MAT-20381', 'activo'),
-                       (11, 11, 1, 'MAT-10101', 'activo'),
-                       (12, 12, 2, 'MAT-99999', 'activo')
+                INSERT INTO medicos (id_medico, id_usuario, id_clinica, matricula_profesional, descripcion_profesional, experiencia, estado)
+                VALUES (10, 10, 1, 'MAT-20381', 'Cardióloga con enfoque en prevención cardiovascular.', 'Hospital Norte (2018-actualidad).', 'activo'),
+                       (11, 11, 1, 'MAT-10101', 'Médico de medicina general.', 'Clínica Central.', 'activo'),
+                       (12, 12, 2, 'MAT-99999', 'Médico de medicina general.', 'Clínica Sur.', 'activo')
             """)
 
             # Especialidades: 1=Cardiología, 2=Pediatría
@@ -105,10 +105,10 @@ class CU06SpecialistSearchTestCase(unittest.TestCase):
             # Servicio 2: Presencial Cardiología (Tenant 1), 150 BOB, PRESENCIAL
             # Servicio 3: Teleconsulta Cardiología (Tenant 2), 200 BOB, TELECONSULTA
             conn.exec_driver_sql("""
-                INSERT INTO servicios_medicos (id_servicio, id_clinica, nombre, modalidad, costo, duracion_minutos, hora_inicio, hora_fin, estado)
-                VALUES (1, 1, 'Teleconsulta cardiológica', 'TELECONSULTA', 250.0, 30, '08:00:00', '12:00:00', 'activo'),
-                       (2, 1, 'Consulta cardiológica presencial', 'PRESENCIAL', 150.0, 30, '08:00:00', '12:00:00', 'activo'),
-                       (3, 2, 'Teleconsulta ajena', 'TELECONSULTA', 200.0, 30, '08:00:00', '12:00:00', 'activo')
+                INSERT INTO servicios_medicos (id_servicio, id_clinica, nombre, descripcion, modalidad, costo, duracion_minutos, hora_inicio, hora_fin, estado)
+                VALUES (1, 1, 'Teleconsulta cardiológica', 'Evaluación de riesgos cardiovasculares.', 'TELECONSULTA', 250.0, 30, '08:00:00', '12:00:00', 'activo'),
+                       (2, 1, 'Consulta cardiológica presencial', 'Consulta cardiológica completa.', 'PRESENCIAL', 150.0, 30, '08:00:00', '12:00:00', 'activo'),
+                       (3, 2, 'Teleconsulta ajena', 'Servicio de otro tenant.', 'TELECONSULTA', 200.0, 30, '08:00:00', '12:00:00', 'activo')
             """)
 
             # Horarios médicos (para viernes, día de semana 5: por ejemplo 2026-04-10 es viernes)
@@ -147,9 +147,21 @@ class CU06SpecialistSearchTestCase(unittest.TestCase):
         item = data["items"][0]
         self.assertEqual(item["id_medico"], 10)
         self.assertEqual(item["nombre_completo"], "Elena Ríos Vargas")
+        self.assertEqual(
+            item["descripcion_profesional"],
+            "Cardióloga con enfoque en prevención cardiovascular.",
+        )
+        self.assertEqual(item["experiencia"], "Hospital Norte (2018-actualidad).")
+        self.assertTrue(item["especialidades"][0]["es_principal"])
         self.assertEqual(len(item["servicios"]), 1)
         self.assertEqual(item["servicios"][0]["modalidad"], "TELECONSULTA")
         self.assertEqual(item["servicios"][0]["costo"], 250.0)
+        self.assertEqual(
+            item["servicios"][0]["descripcion"],
+            "Evaluación de riesgos cardiovasculares.",
+        )
+        self.assertEqual(item["servicios"][0]["hora_inicio"], "08:00:00")
+        self.assertEqual(item["servicios"][0]["hora_fin"], "12:00:00")
 
         # No incluye a Carlos Gómez (es PRESENCIAL) ni Mario Pérez (es Tenant 2)
         medicos_ids = [it["id_medico"] for it in data["items"]]
@@ -205,6 +217,14 @@ class CU06SpecialistSearchTestCase(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
+        self.assertEqual(
+            data["descripcion_profesional"],
+            "Cardióloga con enfoque en prevención cardiovascular.",
+        )
+        self.assertEqual(data["experiencia"], "Hospital Norte (2018-actualidad).")
+        self.assertTrue(data["especialidades"][0]["es_principal"])
+        self.assertEqual(data["servicios"][0]["hora_inicio"], "08:00:00")
+        self.assertEqual(data["servicios"][0]["hora_fin"], "12:00:00")
         slots = data["disponibilidad"][0]["slots"]
 
         # Slot 08:00 a 08:30 debe estar disponible

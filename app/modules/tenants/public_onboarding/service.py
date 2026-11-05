@@ -17,9 +17,8 @@ from sqlalchemy import func
 
 from app.core.config import settings
 from app.core.security import decrypt_temporary_credential
-from app.modules.auth.models import Clinica
+from app.modules.auth.models import Clinica, Plan, VersionPlan
 from app.modules.tenants.models import (
-    PlanVersion,
     TenantRequest,
     TenantRequestTrackingAudit,
 )
@@ -236,7 +235,7 @@ def create_public_tenant_request(
     responsable_nombre: str,
     responsable_correo: str,
     responsable_telefono: Optional[str],
-    plan_version_id: Optional[str],
+    plan_version_id: Optional[int],
     documentos: List[UploadFile],
     client_ip: Optional[str] = None,
     user_agent: Optional[str] = None,
@@ -281,12 +280,18 @@ def create_public_tenant_request(
                 detail="Ya existe una solicitud pendiente o entidad activa con este NIT.",
             )
 
-    # 3. Validación de plan si se especificó
+    # 3. Validación del plan canónico CU34 si se especificó
     if plan_version_id:
-        plan = db.query(PlanVersion).filter(
-            PlanVersion.id_plan_version == plan_version_id,
-            PlanVersion.estado == "ACTIVO",
-        ).first()
+        plan = (
+            db.query(VersionPlan)
+            .join(Plan, Plan.id == VersionPlan.plan_id)
+            .filter(
+                VersionPlan.id == plan_version_id,
+                Plan.activo.is_(True),
+                VersionPlan.numero == Plan.version_actual,
+            )
+            .first()
+        )
         if not plan:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -335,7 +340,7 @@ def create_public_tenant_request(
         responsable_nombre=responsable_nombre.strip(),
         responsable_correo=responsable_correo.strip().lower(),
         responsable_telefono=responsable_telefono.strip() if responsable_telefono else None,
-        plan_version_id=plan_version_id,
+        id_version_plan=plan_version_id,
         documentos_metadata=json.dumps(docs_metadata) if docs_metadata else None,
         tracking_code=tracking_code,
         status="PENDING",

@@ -12,6 +12,7 @@ class TenantRequestItem(BaseModel):
     telefono: Optional[str] = None
     responsable_nombre: str
     responsable_correo: str
+    id_version_plan: Optional[int] = None
     plan_version_id: Optional[str] = None
     tracking_code: str
     status: str
@@ -57,6 +58,7 @@ class TenantItem(BaseModel):
     telefono: Optional[str] = None
     direccion: Optional[str] = None
     estado: str
+    id_version_plan: Optional[int] = None
     plan_id: Optional[str] = None
     commercial_notes: Optional[str] = None
     row_version: int
@@ -81,7 +83,7 @@ class TenantStateAction(BaseModel):
 
 
 class CommercialAgreementUpdate(BaseModel):
-    plan_id: Optional[str] = None
+    plan_id: Optional[int] = None
     commercial_notes: Optional[str] = None
     row_version: int = Field(default=1)
 

@@ -672,8 +672,10 @@ def seed_all():
         if not srv1:
             srv1 = ServicioMedico(
                 id_servicio=1,
+                id_clinica=1,
                 nombre="Consulta general",
                 descripcion="Atención médica general y chequeo preventivo.",
+                modalidad="PRESENCIAL",
                 hora_inicio="08:00:00",
                 hora_fin="13:00:00",
                 duracion_minutos=30,
@@ -681,13 +683,18 @@ def seed_all():
                 estado="activo",
             )
             db.add(srv1)
-        
+        else:
+            srv1.id_clinica = srv1.id_clinica or medico_roberto.id_clinica
+            srv1.modalidad = "PRESENCIAL"
+
         srv2 = db.query(ServicioMedico).filter(ServicioMedico.id_servicio == 2).first()
         if not srv2:
             srv2 = ServicioMedico(
                 id_servicio=2,
+                id_clinica=1,
                 nombre="Consulta especializada",
                 descripcion="Atención médica especializada y teleconsulta.",
+                modalidad="TELECONSULTA",
                 hora_inicio="13:00:00",
                 hora_fin="16:00:00",
                 duracion_minutos=45,
@@ -695,13 +702,18 @@ def seed_all():
                 estado="activo",
             )
             db.add(srv2)
+        else:
+            srv2.id_clinica = srv2.id_clinica or medico_roberto.id_clinica
+            srv2.modalidad = "TELECONSULTA"
 
         srv3 = db.query(ServicioMedico).filter(ServicioMedico.id_servicio == 3).first()
         if not srv3:
             srv3 = ServicioMedico(
                 id_servicio=3,
+                id_clinica=1,
                 nombre="Evaluación médica",
                 descripcion="Evaluación médica integral y control preventivo.",
+                modalidad="PRESENCIAL",
                 hora_inicio="16:00:00",
                 hora_fin="18:00:00",
                 duracion_minutos=60,
@@ -709,6 +721,9 @@ def seed_all():
                 estado="activo",
             )
             db.add(srv3)
+        else:
+            srv3.id_clinica = srv3.id_clinica or medico_roberto.id_clinica
+            srv3.modalidad = "PRESENCIAL"
 
         db.flush()
 

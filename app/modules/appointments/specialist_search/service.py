@@ -273,6 +273,7 @@ def buscar_especialistas(
                     EspecialidadOut(
                         id_especialidad=me.especialidad.id_especialidad,
                         nombre=me.especialidad.nombre,
+                        es_principal=me.es_principal,
                     )
                 )
 
@@ -301,10 +302,13 @@ def buscar_especialistas(
             ServicioOut(
                 id_servicio=s.id_servicio,
                 nombre=s.nombre,
+                descripcion=s.descripcion,
                 modalidad=s.modalidad or "PRESENCIAL",
                 costo=float(s.costo),
                 moneda="BOB",
                 duracion_minutos=s.duracion_minutos,
+                hora_inicio=_formatear_hora(s.hora_inicio),
+                hora_fin=_formatear_hora(s.hora_fin),
             )
             for s in servicios_db
         ]
@@ -318,6 +322,8 @@ def buscar_especialistas(
                 nombre_completo=nombre_completo,
                 foto_url=m.foto_perfil or (u.foto_perfil if u else None),
                 matricula_profesional=m.matricula_profesional,
+                descripcion_profesional=m.descripcion_profesional,
+                experiencia=m.experiencia,
                 especialidades=especialidades,
                 servicios=servicios_out,
                 disponibilidad=disp,
@@ -375,6 +381,7 @@ def obtener_disponibilidad_especialista(
         EspecialidadOut(
             id_especialidad=me.especialidad.id_especialidad,
             nombre=me.especialidad.nombre,
+            es_principal=me.es_principal,
         )
         for me in medico.especialidades
         if me.especialidad and me.especialidad.estado.lower() == "activo"
@@ -398,10 +405,13 @@ def obtener_disponibilidad_especialista(
         ServicioOut(
             id_servicio=s.id_servicio,
             nombre=s.nombre,
+            descripcion=s.descripcion,
             modalidad=s.modalidad or "PRESENCIAL",
             costo=float(s.costo),
             moneda="BOB",
             duracion_minutos=s.duracion_minutos,
+            hora_inicio=_formatear_hora(s.hora_inicio),
+            hora_fin=_formatear_hora(s.hora_fin),
         )
         for s in servicios_db
     ]
@@ -415,6 +425,8 @@ def obtener_disponibilidad_especialista(
         nombre_completo=nombre_completo,
         foto_url=medico.foto_perfil or (u.foto_perfil if u else None),
         matricula_profesional=medico.matricula_profesional,
+        descripcion_profesional=medico.descripcion_profesional,
+        experiencia=medico.experiencia,
         especialidades=especialidades,
         servicios=servicios_out,
         disponibilidad=disp,

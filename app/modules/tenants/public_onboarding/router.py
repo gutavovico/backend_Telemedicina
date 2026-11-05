@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.modules.tenants.models import PlanVersion
+from app.modules.auth.models import Plan, VersionPlan
 from app.modules.tenants.public_onboarding.schemas import (
     TenantRequestCreateResponse,
     TenantRequestTrackingResponse,
@@ -40,7 +40,7 @@ def submit_public_tenant_request(
     responsable_nombre: str = Form(..., description="Nombre completo del responsable legal"),
     responsable_correo: str = Form(..., description="Correo del responsable"),
     responsable_telefono: Optional[str] = Form(None, description="Teléfono del responsable"),
-    plan_version_id: Optional[str] = Form(None, description="ID del plan de interés"),
+    plan_version_id: Optional[int] = Form(None, description="ID canónico de la versión del plan"),
     documentos: List[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
 ):
@@ -103,6 +103,23 @@ def get_tenant_request_status(
 )
 def get_public_plans(db: Session = Depends(get_db)):
     """Retorna los planes activos que las instituciones de salud pueden seleccionar al solicitar alta."""
-    planes = db.query(PlanVersion).filter(PlanVersion.estado == "ACTIVO").all()
-    return planes
+    planes = (
+        db.query(VersionPlan)
+        .join(Plan, Plan.id == VersionPlan.plan_id)
+        .filter(Plan.activo.is_(True), VersionPlan.numero == Plan.version_actual)
+        .order_by(VersionPlan.precio_mensual.asc())
+        .all()
+    )
+    return [
+        PlanVersionItem(
+            id_plan_version=p.id,
+            nombre=p.nombre,
+            descripcion=p.descripcion,
+            precio_mensual=float(p.precio_mensual),
+            moneda=p.moneda,
+            limite_medicos=p.limite_medicos,
+            limite_consultas_mes=p.limite_consultas,
+        )
+        for p in planes
+    ]
 

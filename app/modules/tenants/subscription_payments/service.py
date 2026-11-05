@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.tenant_status import CANONICAL_ACTIVE, canonical_tenant_status
-from app.modules.auth.models import Clinica, Usuario
+from app.modules.auth.models import Clinica, Plan, Usuario, VersionPlan
 from app.modules.payments.service import (
     _stripe_request,
     stripe_habilitado,
@@ -46,7 +46,7 @@ def _url_con_pago(url: str, id_pago: str) -> str:
 
 
 def _crear_sesion_stripe(
-    plan: PlanVersion,
+    plan: VersionPlan,
     pago: SubscriptionPayment,
     monto: float,
     ciclo: str,
@@ -74,9 +74,9 @@ def _crear_sesion_stripe(
 
 
 def _extender_vigencia(sub: TenantSubscription, ciclo: str) -> None:
-    """Extiende el período sin perder días ya pagados."""
+    """Extiende el período mensual sin perder días ya pagados."""
     ahora = datetime.now(timezone.utc)
-    dias = 365 if ciclo == "ANNUAL" else 30
+    dias = 30
     fin_actual = _to_utc(sub.fecha_fin)
     if (
         fin_actual is not None
@@ -114,41 +114,41 @@ def get_current_subscription(db: Session, tenant_id: int) -> CurrentSubscription
         else:
             derived = "ACTIVE"
 
-    plan = sub.plan
+    plan = sub.plan_canonico
     return CurrentSubscriptionResponse(
         has_subscription=True,
         id_suscripcion=sub.id_suscripcion,
         tenant_id=sub.tenant_id or str(sub.id_clinica),
         plan_nombre=plan.nombre if plan else "Plan Base",
-        plan_version_id=sub.id_plan_version,
+        id_plan_version=plan.id if plan else sub.id_version_plan,
         ciclo=sub.ciclo,
         fecha_inicio=sub.fecha_inicio,
         fecha_fin=sub.fecha_fin,
         dias_gracia=sub.dias_gracia,
         estado=sub.estado,
         derived_status=derived,
-        limite_medicos=plan.limite_medicos if plan else 10,
-        limite_consultas_mes=plan.limite_consultas_mes if plan else 100,
+        limite_medicos=plan.limite_medicos if plan else None,
+        limite_consultas_mes=plan.limite_consultas if plan else None,
     )
 
 
 def list_active_plans(db: Session) -> List[PlanVersionItem]:
     planes = (
-        db.query(PlanVersion)
-        .filter(PlanVersion.estado == "ACTIVO")
-        .order_by(PlanVersion.precio_mensual.asc())
+        db.query(VersionPlan)
+        .join(Plan, Plan.id == VersionPlan.plan_id)
+        .filter(Plan.activo.is_(True), VersionPlan.numero == Plan.version_actual)
+        .order_by(VersionPlan.precio_mensual.asc())
         .all()
     )
     return [
         PlanVersionItem(
-            id_plan_version=p.id_plan_version,
+            id_plan_version=p.id,
             nombre=p.nombre,
             descripcion=p.descripcion,
             precio_mensual=float(p.precio_mensual),
-            precio_anual=float(p.precio_anual),
             moneda=p.moneda,
             limite_medicos=p.limite_medicos,
-            limite_consultas_mes=p.limite_consultas_mes,
+            limite_consultas_mes=p.limite_consultas,
         )
         for p in planes
     ]
@@ -158,12 +158,22 @@ def create_subscription_checkout(
     db: Session,
     tenant_id: int,
     user: Usuario,
-    plan_version_id: str,
+    plan_version_id: int,
     cycle: str,
 ) -> CheckoutResponse:
+    if cycle.upper() != "MONTHLY":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Solo se admiten contrataciones mensuales",
+        )
     plan = (
-        db.query(PlanVersion)
-        .filter(PlanVersion.id_plan_version == plan_version_id, PlanVersion.estado == "ACTIVO")
+        db.query(VersionPlan)
+        .join(Plan, Plan.id == VersionPlan.plan_id)
+        .filter(
+            VersionPlan.id == plan_version_id,
+            Plan.activo.is_(True),
+            VersionPlan.numero == Plan.version_actual,
+        )
         .first()
     )
     if not plan:
@@ -172,8 +182,8 @@ def create_subscription_checkout(
             detail="La versión de plan solicitada no existe o no está activa",
         )
 
-    # Determinar precio autoritativo desde la base de datos
-    monto = float(plan.precio_anual if cycle.upper() == "ANNUAL" else plan.precio_mensual)
+    # El precio autoritativo es siempre el mensual del catálogo CU34.
+    monto = float(plan.precio_mensual)
 
     # Reutilizar checkout activo pendiente en vez de duplicar
     ahora = datetime.now(timezone.utc)
@@ -182,8 +192,8 @@ def create_subscription_checkout(
         db.query(SubscriptionPayment)
         .filter(
             SubscriptionPayment.id_clinica == tenant_id,
-            SubscriptionPayment.id_plan_version == plan_version_id,
-            SubscriptionPayment.ciclo == cycle.upper(),
+            SubscriptionPayment.id_version_plan == plan_version_id,
+            SubscriptionPayment.ciclo == "MONTHLY",
             SubscriptionPayment.estado == "PENDING",
             SubscriptionPayment.fecha_creacion >= hace_veinte_minutos,
         )
@@ -203,8 +213,8 @@ def create_subscription_checkout(
     if not sub:
         sub = TenantSubscription(
             id_clinica=tenant_id,
-            id_plan_version=plan_version_id,
-            ciclo=cycle.upper(),
+            id_version_plan=plan_version_id,
+            ciclo="MONTHLY",
             fecha_inicio=ahora,
             fecha_fin=ahora,
             estado="TRIALING",
@@ -218,8 +228,8 @@ def create_subscription_checkout(
         id_suscripcion=sub.id_suscripcion,
         id_clinica=tenant_id,
         id_usuario=user.id_usuario,
-        id_plan_version=plan_version_id,
-        ciclo=cycle.upper(),
+        id_version_plan=plan_version_id,
+        ciclo="MONTHLY",
         monto=monto,
         moneda=plan.moneda or "BOB",
         estado="PENDING",
@@ -229,7 +239,7 @@ def create_subscription_checkout(
     db.flush()
 
     if stripe_habilitado():
-        sesion = _crear_sesion_stripe(plan, nuevo_pago, monto, cycle.upper())
+        sesion = _crear_sesion_stripe(plan, nuevo_pago, monto, "MONTHLY")
         session_id = sesion.get("id") or f"cs_sub_{uuid.uuid4().hex}"
         checkout_url = sesion.get("url") or ""
         if not checkout_url:
@@ -409,7 +419,7 @@ def list_subscription_payments(
             numero_factura=p.numero_factura,
             fecha_pago=p.fecha_pago,
             fecha_creacion=p.fecha_creacion,
-            plan_nombre=p.plan.nombre if p.plan else None,
+            plan_nombre=p.plan_canonico.nombre if p.plan_canonico else (p.plan.nombre if p.plan else None),
         )
         for p in pagos
     ]
@@ -445,7 +455,10 @@ def get_receipt_metadata(
         )
 
     clinica = db.query(Clinica).filter(Clinica.id_clinica == tenant_id).first()
-    plan = db.query(PlanVersion).filter(PlanVersion.id_plan_version == pago.id_plan_version).first()
+    plan = db.query(VersionPlan).filter(VersionPlan.id == pago.id_version_plan).first()
+    if not plan and pago.id_plan_version:
+        legacy = db.query(PlanVersion).filter(PlanVersion.id_plan_version == pago.id_plan_version).first()
+        plan = legacy
 
     return ReceiptMetadataResponse(
         id_pago=pago.id_pago_suscripcion,

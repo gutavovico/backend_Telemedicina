@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class EspecialidadOut(BaseModel):
     id_especialidad: int
     nombre: str
+    es_principal: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -14,10 +15,13 @@ class EspecialidadOut(BaseModel):
 class ServicioOut(BaseModel):
     id_servicio: int
     nombre: str
+    descripcion: Optional[str] = None
     modalidad: str
     costo: float
     moneda: str = "BOB"
     duracion_minutos: int
+    hora_inicio: str
+    hora_fin: str
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -38,6 +42,8 @@ class EspecialistaItem(BaseModel):
     nombre_completo: str
     foto_url: Optional[str] = None
     matricula_profesional: str
+    descripcion_profesional: Optional[str] = None
+    experiencia: Optional[str] = None
     especialidades: List[EspecialidadOut] = Field(default_factory=list)
     servicios: List[ServicioOut] = Field(default_factory=list)
     disponibilidad: List[DiaDisponibilidad] = Field(default_factory=list)
@@ -55,6 +61,8 @@ class EspecialistaDisponibilidadResponse(BaseModel):
     nombre_completo: str
     foto_url: Optional[str] = None
     matricula_profesional: str
+    descripcion_profesional: Optional[str] = None
+    experiencia: Optional[str] = None
     especialidades: List[EspecialidadOut] = Field(default_factory=list)
     servicios: List[ServicioOut] = Field(default_factory=list)
     disponibilidad: List[DiaDisponibilidad] = Field(default_factory=list)

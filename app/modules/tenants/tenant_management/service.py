@@ -21,9 +21,8 @@ from app.core.tenant_status import (
     tenant_status_variants,
 )
 from app.modules.auth.dependencies import _is_global_super_admin
-from app.modules.auth.models import Auditoria, Clinica, Rol, Usuario
+from app.modules.auth.models import Auditoria, Clinica, Plan, Rol, Usuario, VersionPlan
 from app.modules.tenants.models import (
-    PlanVersion,
     TenantRequest,
     TenantSubscription,
 )
@@ -175,6 +174,24 @@ def approve_tenant_request(
 
     tenant_uuid = str(uuid.uuid4())
 
+    # Validar que la versión canónica seleccionada siga vigente.
+    if req.id_version_plan:
+        plan = (
+            db.query(VersionPlan)
+            .join(Plan, Plan.id == VersionPlan.plan_id)
+            .filter(
+                VersionPlan.id == req.id_version_plan,
+                Plan.activo.is_(True),
+                VersionPlan.numero == Plan.version_actual,
+            )
+            .first()
+        )
+        if not plan:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="El plan seleccionado ya no está disponible",
+            )
+
     # Crear Clinica / Tenant
     nueva_clinica = Clinica(
         tenant_id=tenant_uuid,
@@ -185,7 +202,7 @@ def approve_tenant_request(
         telefono=req.telefono,
         direccion=req.direccion,
         estado="ACTIVE",
-        plan_id=req.plan_version_id,
+        id_version_plan=req.id_version_plan,
         row_version=1,
     )
     db.add(nueva_clinica)
@@ -218,12 +235,12 @@ def approve_tenant_request(
     db.flush()
 
     # Si solicitó un plan, crear la suscripción inicial
-    if req.plan_version_id:
+    if req.id_version_plan:
         ahora = datetime.now(timezone.utc)
         suscripcion = TenantSubscription(
             id_clinica=nueva_clinica.id_clinica,
             tenant_id=tenant_uuid,
-            id_plan_version=req.plan_version_id,
+            id_version_plan=req.id_version_plan,
             ciclo="MONTHLY",
             fecha_inicio=ahora,
             fecha_fin=ahora + timedelta(days=30),
@@ -453,7 +470,22 @@ def update_commercial_agreement(
     }
 
     if payload.plan_id is not None:
-        clinica.plan_id = payload.plan_id
+        plan = (
+            db.query(VersionPlan)
+            .join(Plan, Plan.id == VersionPlan.plan_id)
+            .filter(
+                VersionPlan.id == payload.plan_id,
+                Plan.activo.is_(True),
+                VersionPlan.numero == Plan.version_actual,
+            )
+            .first()
+        )
+        if not plan:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="El plan seleccionado no existe o no está activo",
+            )
+        clinica.id_version_plan = payload.plan_id
     if payload.commercial_notes is not None:
         clinica.commercial_notes = payload.commercial_notes
     clinica.row_version += 1

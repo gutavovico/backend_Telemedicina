@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.main import app
 from app.modules.auth.dependencies import get_current_user
-from app.modules.auth.models import Auditoria, Clinica, Rol, Usuario
+from app.modules.auth.models import Auditoria, Clinica, Plan, Rol, Usuario, VersionPlan
 from app.modules.appointments.models import Cita, Especialidad, Medico
 from app.modules.medical_records.models import Paciente
 from app.modules.tenants.models import PlanVersion, TenantRequest
@@ -46,7 +46,8 @@ class CU30TenantManagementTestCase(unittest.TestCase):
             conn.exec_driver_sql("DELETE FROM auditoria")
             conn.exec_driver_sql("DELETE FROM tenant_requests")
             conn.exec_driver_sql("DELETE FROM tenant_subscriptions")
-            conn.exec_driver_sql("DELETE FROM plan_versions")
+            conn.exec_driver_sql("DELETE FROM versiones_plan")
+            conn.exec_driver_sql("DELETE FROM planes")
             conn.exec_driver_sql("DELETE FROM usuarios")
             conn.exec_driver_sql("DELETE FROM roles")
             conn.exec_driver_sql("DELETE FROM clinicas")
@@ -93,16 +94,25 @@ class CU30TenantManagementTestCase(unittest.TestCase):
                 VALUES (1, 3, 1, 'MAT-MED-01', 'activo')
             """)
 
-            # Plan Version
+            # Plan canónico CU34
             conn.exec_driver_sql("""
-                INSERT INTO plan_versions (id_plan_version, nombre, precio_mensual, precio_anual, moneda, limite_medicos, limite_consultas_mes, estado)
-                VALUES ('plan-uuid-pro', 'Plan Pro Salud', 500.0, 5000.0, 'BOB', 10, 100, 'ACTIVO')
+                INSERT INTO planes (id, codigo, activo, version_actual)
+                VALUES (1, 'PRO_SALUD', 1, 1)
+            """)
+            conn.exec_driver_sql("""
+                INSERT INTO versiones_plan (
+                    id, plan_id, numero, nombre, precio_mensual, moneda, ciclo,
+                    servicios_incluidos, limite_medicos, limite_sedes,
+                    limite_consultas, tarifas_excedentes, demora_pago_dias, creado_por
+                )
+                VALUES (201, 1, 1, 'Plan Pro Salud', 500.0, 'BOB', 'MENSUAL',
+                        '[]', 10, NULL, 100, '[]', 7, 1)
             """)
 
             # Tenant Request PENDING
             conn.exec_driver_sql("""
-                INSERT INTO tenant_requests (id_request, institucion_nombre, razon_social, nit, correo, telefono, responsable_nombre, responsable_correo, plan_version_id, tracking_code, status, row_version)
-                VALUES ('req-uuid-1', 'Clínica Santa Cruz', 'Santa Cruz S.R.L.', '554433221', 'contacto@santacruz.com', '71234567', 'Dra. María Lopez', 'maria@santacruz.com', 'plan-uuid-pro', 'TRACK-123456', 'PENDING', 1)
+                INSERT INTO tenant_requests (id_request, institucion_nombre, razon_social, nit, correo, telefono, responsable_nombre, responsable_correo, id_version_plan, tracking_code, status, row_version)
+                VALUES ('req-uuid-1', 'Clínica Santa Cruz', 'Santa Cruz S.R.L.', '554433221', 'contacto@santacruz.com', '71234567', 'Dra. María Lopez', 'maria@santacruz.com', 201, 'TRACK-123456', 'PENDING', 1)
             """)
 
         self.db = self.SessionLocal()
@@ -225,15 +235,15 @@ class CU30TenantManagementTestCase(unittest.TestCase):
         resp = self.client.put(
             "/api/v1/tenants/1/commercial-agreement",
             json={
-                "plan_id": "plan-uuid-pro",
-                "commercial_notes": "Descuento 10% por pago anual",
+                "plan_id": 201,
+                "commercial_notes": "Condiciones mensuales especiales",
                 "row_version": 1,
             },
         )
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
-        self.assertEqual(data["plan_id"], "plan-uuid-pro")
-        self.assertEqual(data["commercial_notes"], "Descuento 10% por pago anual")
+        self.assertEqual(data["id_version_plan"], 201)
+        self.assertEqual(data["commercial_notes"], "Condiciones mensuales especiales")
 
     def test_tenant_context_endpoint_compat(self):
         # 1. Tenant admin context

@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.main import app
 from app.modules.auth.dependencies import get_current_user
-from app.modules.auth.models import Clinica, Rol, Usuario
+from app.modules.auth.models import Clinica, Plan, Rol, Usuario, VersionPlan
 from app.modules.tenants.models import PlanVersion, TenantDeactivationRequest, TenantRequest
 from app.modules.tenants.public_onboarding.service import reset_public_rate_limits
 
@@ -43,7 +43,8 @@ class CU32HealthEntityOnboardingTestCase(unittest.TestCase):
         with self.engine.begin() as conn:
             conn.exec_driver_sql("DELETE FROM tenant_deactivation_requests")
             conn.exec_driver_sql("DELETE FROM tenant_requests")
-            conn.exec_driver_sql("DELETE FROM plan_versions")
+            conn.exec_driver_sql("DELETE FROM versiones_plan")
+            conn.exec_driver_sql("DELETE FROM planes")
             conn.exec_driver_sql("DELETE FROM usuarios")
             conn.exec_driver_sql("DELETE FROM roles")
             conn.exec_driver_sql("DELETE FROM clinicas")
@@ -81,10 +82,19 @@ class CU32HealthEntityOnboardingTestCase(unittest.TestCase):
                 VALUES (1, NULL, 3, 'Super', 'Admin', 'super@global.org', 'fakehash', 'activo', 0, 1, 1, 0)
             """)
 
-            # Plan activo
+            # Plan canónico CU34
             conn.exec_driver_sql("""
-                INSERT INTO plan_versions (id_plan_version, nombre, precio_mensual, precio_anual, moneda, limite_medicos, limite_consultas_mes, estado)
-                VALUES ('plan-hosp-v1', 'Plan Hospitalario', 250.00, 2500.00, 'BOB', 50, 1000, 'ACTIVO')
+                INSERT INTO planes (id, codigo, activo, version_actual)
+                VALUES (1, 'HOSPITALARIO', 1, 1)
+            """)
+            conn.exec_driver_sql("""
+                INSERT INTO versiones_plan (
+                    id, plan_id, numero, nombre, precio_mensual, moneda, ciclo,
+                    servicios_incluidos, limite_medicos, limite_sedes,
+                    limite_consultas, tarifas_excedentes, demora_pago_dias, creado_por
+                )
+                VALUES (301, 1, 1, 'Plan Hospitalario', 250.00, 'BOB', 'MENSUAL',
+                        '[]', 50, NULL, 1000, '[]', 7, 1)
             """)
 
     def test_public_onboarding_success_pending(self):
@@ -103,7 +113,7 @@ class CU32HealthEntityOnboardingTestCase(unittest.TestCase):
             "responsable_nombre": "Dr. Carlos Ramos",
             "responsable_correo": "cramos@clinicaesperanza.com",
             "responsable_telefono": "78912346",
-            "plan_version_id": "plan-hosp-v1",
+            "plan_version_id": 301,
         }
 
         res = self.client.post("/api/v1/public/tenant-requests", data=data, files=files)

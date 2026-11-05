@@ -8,7 +8,7 @@ class CurrentSubscriptionResponse(BaseModel):
     id_suscripcion: Optional[str] = None
     tenant_id: Optional[str] = None
     plan_nombre: Optional[str] = None
-    plan_version_id: Optional[str] = None
+    id_plan_version: Optional[int] = None
     ciclo: Optional[str] = None
     fecha_inicio: Optional[datetime] = None
     fecha_fin: Optional[datetime] = None
@@ -22,21 +22,20 @@ class CurrentSubscriptionResponse(BaseModel):
 
 
 class PlanVersionItem(BaseModel):
-    id_plan_version: str
+    id_plan_version: int
     nombre: str
     descripcion: Optional[str] = None
     precio_mensual: float
-    precio_anual: float
     moneda: str
-    limite_medicos: int
-    limite_consultas_mes: int
+    limite_medicos: Optional[int] = None
+    limite_consultas_mes: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class CreateCheckoutRequest(BaseModel):
-    plan_version_id: str
-    cycle: str = Field(..., pattern="^(MONTHLY|ANNUAL)$")
+    plan_version_id: int = Field(..., gt=0)
+    cycle: str = Field(default="MONTHLY", pattern="^MONTHLY$")
 
     model_config = ConfigDict(extra="forbid")
 

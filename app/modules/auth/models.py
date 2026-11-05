@@ -17,6 +17,15 @@ class Clinica(Base):
     direccion = Column(String(250), nullable=True)
     logo = Column(String(500), nullable=True)
     estado = Column(String(20), nullable=False, default="ACTIVO")
+    # Referencia canónica a la versión inmutable del catálogo CU34.
+    # ``plan_id`` se conserva durante la transición para leer acuerdos legacy.
+    id_version_plan = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        # La FK física se crea en la migración 020. Se omite en el modelo para
+        # permitir fixtures SQLite que construyan solo un subconjunto de tablas.
+        nullable=True,
+        index=True,
+    )
     plan_id = Column(String(36), nullable=True)
     commercial_notes = Column(Text, nullable=True)
     row_version = Column(Integer, nullable=False, default=1, server_default="1")
@@ -146,10 +155,8 @@ class TokenBlacklist(Base):
 
 class Auditoria(Base):
     __tablename__ = "auditoria"
-    __table_args__ = (CheckConstraint(
-        "id_clinica IS NOT NULL OR COALESCE(tabla_afectada IN ('planes', 'versiones_plan'), FALSE)",
-        name="ck_auditoria_global_catalogo",
-    ),)
+    # La auditoría global puede ejecutarse sin id_clinica (CU30 y CU34).
+    # La migración 020 elimina la restricción restrictiva de CU34.
 
     id_auditoria = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
     id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=True)
