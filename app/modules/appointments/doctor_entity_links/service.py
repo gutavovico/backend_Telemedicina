@@ -21,6 +21,7 @@ from app.modules.appointments.doctor_entity_links.models import (
     VinculacionMedicoEntidad,
     VinculacionMedicoEspecialidad,
     VinculacionMedicoRol,
+    VinculacionMedicoSede,
 )
 from app.modules.appointments.doctor_entity_links.schemas import (
     AsignacionesInput,
@@ -31,6 +32,7 @@ from app.modules.appointments.doctor_entity_links.schemas import (
 )
 from app.modules.appointments.models import Especialidad, Medico
 from app.modules.auth.models import Clinica, Permiso, Rol, RolPermiso, Usuario
+from app.modules.tenants.models import Sede
 
 TABLA_VINCULACION = "vinculaciones_medico_entidad"
 HORAS_VIGENCIA_CREDENCIAL = 72
@@ -119,6 +121,31 @@ async def _especialidades_asignadas(
     return list(filas.all())
 
 
+async def _sedes_asignadas(db: AsyncSession, id_vinculacion: int) -> List[int]:
+    filas = await db.scalars(
+        select(VinculacionMedicoSede.id_sede)
+        .where(VinculacionMedicoSede.id_vinculacion == id_vinculacion)
+        .order_by(VinculacionMedicoSede.id_sede)
+    )
+    return [int(id_sede) for id_sede in filas.all()]
+
+
+async def _sedes_por_vinculacion(
+    db: AsyncSession, ids: List[int]
+) -> Dict[int, List[int]]:
+    resultado: Dict[int, List[int]] = {id_vinculacion: [] for id_vinculacion in ids}
+    if not ids:
+        return resultado
+    filas = await db.execute(
+        select(VinculacionMedicoSede.id_vinculacion, VinculacionMedicoSede.id_sede)
+        .where(VinculacionMedicoSede.id_vinculacion.in_(ids))
+        .order_by(VinculacionMedicoSede.id_sede)
+    )
+    for id_vinculacion, id_sede in filas.all():
+        resultado[id_vinculacion].append(int(id_sede))
+    return resultado
+
+
 async def _cargar_usuarios(
     db: AsyncSession, ids: List[int]
 ) -> Dict[int, Usuario]:
@@ -184,6 +211,7 @@ def _respuesta_vinculacion(
     medico: Optional[Medico],
     roles: List[Tuple[Rol, bool]],
     especialidades: List[Tuple[Especialidad, bool]],
+    sedes: Optional[List[int]] = None,
 ) -> Dict[str, Any]:
     return {
         "id_vinculacion": link.id_vinculacion,
@@ -201,7 +229,7 @@ def _respuesta_vinculacion(
         "existe_perfil": medico is not None,
         "roles": _serializar_roles(roles),
         "especialidades": _serializar_especialidades(especialidades),
-        "sedes": [],
+        "sedes": list(sedes or []),
         "fecha_invitacion": link.fecha_invitacion,
         "respondido_en": link.respondido_en,
         "fecha_estado": link.fecha_estado,
@@ -268,12 +296,7 @@ async def buscar_candidato(
 
 async def _validar_asignaciones(
     db: AsyncSession, id_clinica: int, datos: AsignacionesInput
-) -> Tuple[List[Rol], List[Especialidad], int]:
-    if datos.sedes:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="La asignación de sedes no está habilitada hasta disponer de CU33",
-        )
+) -> Tuple[List[Rol], List[Especialidad], int, List[Sede]]:
     if datos.id_rol_principal not in datos.roles:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -331,7 +354,34 @@ async def _validar_asignaciones(
                 detail="Solo una especialidad puede ser principal",
             )
 
-    return roles, especialidades, datos.id_rol_principal
+    sedes: List[Sede] = []
+    if datos.sedes:
+        if len(set(datos.sedes)) != len(datos.sedes):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="La lista de sedes contiene identificadores duplicados",
+            )
+        sedes = list(
+            (await db.scalars(select(Sede).where(Sede.id.in_(datos.sedes)))).all()
+        )
+        if len(sedes) != len(set(datos.sedes)):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Una o más sedes no existen",
+            )
+        for sede in sedes:
+            if int(sede.id_clinica) != int(id_clinica):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"La sede '{sede.nombre}' pertenece a otra entidad",
+                )
+            if not bool(sede.activa):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"La sede '{sede.nombre}' está inactiva",
+                )
+
+    return roles, especialidades, datos.id_rol_principal, sedes
 
 
 async def _crear_asignaciones(
@@ -341,6 +391,7 @@ async def _crear_asignaciones(
     especialidades: List[Especialidad],
     id_rol_principal: int,
     datos: AsignacionesInput,
+    sedes: Optional[List[Sede]] = None,
 ) -> None:
     for rol in roles:
         db.add(
@@ -361,16 +412,25 @@ async def _crear_asignaciones(
                 es_principal=bool(principales.get(especialidad.id_especialidad, False)),
             )
         )
+    for sede in sedes or []:
+        db.add(
+            VinculacionMedicoSede(
+                id_vinculacion=id_vinculacion,
+                id_sede=sede.id,
+            )
+        )
     await db.flush()
 
 
 def _snapshot_asignaciones(
-    roles: List[Tuple[Rol, bool]], especialidades: List[Tuple[Especialidad, bool]]
+    roles: List[Tuple[Rol, bool]],
+    especialidades: List[Tuple[Especialidad, bool]],
+    sedes: Optional[List[int]] = None,
 ) -> Dict[str, Any]:
     return {
         "roles": _serializar_roles(roles),
         "especialidades": _serializar_especialidades(especialidades),
-        "sedes": [],
+        "sedes": list(sedes or []),
     }
 
 
@@ -432,7 +492,7 @@ async def crear_vinculacion(
     direccion_ip: Optional[str] = None,
 ) -> Dict[str, Any]:
     id_clinica = int(actor.id_clinica)
-    roles, especialidades, id_rol_principal = await _validar_asignaciones(
+    roles, especialidades, id_rol_principal, sedes = await _validar_asignaciones(
         db, id_clinica, datos.asignaciones
     )
 
@@ -561,6 +621,7 @@ async def crear_vinculacion(
             especialidades,
             id_rol_principal,
             datos.asignaciones,
+            sedes,
         )
 
         if credencial_plana is not None:
@@ -592,7 +653,7 @@ async def crear_vinculacion(
                 }
                 for especialidad in especialidades
             ],
-            "sedes": [],
+            "sedes": [int(sede.id) for sede in sedes],
         }
         await _registrar_historial(
             db,
@@ -699,6 +760,7 @@ async def listar_vinculaciones(
     usuarios = await _cargar_usuarios(db, [link.id_usuario for link in links])
     medicos = await _cargar_medicos(db, [link.id_usuario for link in links])
     asignaciones = await _asignaciones_por_vinculacion(db, ids)
+    sedes_asignadas = await _sedes_por_vinculacion(db, ids)
 
     items = []
     for link in links:
@@ -710,6 +772,7 @@ async def listar_vinculaciones(
                 medicos.get(link.id_usuario),
                 roles,
                 especialidades,
+                sedes_asignadas.get(link.id_vinculacion, []),
             )
         )
     return {"total": total, "page": page, "per_page": per_page, "items": items}
@@ -741,6 +804,7 @@ async def obtener_detalle(
     medicos = await _cargar_medicos(db, [link.id_usuario])
     roles = await _roles_asignados(db, link.id_vinculacion)
     especialidades = await _especialidades_asignadas(db, link.id_vinculacion)
+    sedes = await _sedes_asignadas(db, link.id_vinculacion)
 
     filas_historial = await db.execute(
         select(HistorialVinculacionMedico, Usuario)
@@ -771,6 +835,7 @@ async def obtener_detalle(
             medicos.get(link.id_usuario),
             roles,
             especialidades,
+            sedes,
         ),
         "historial": historial,
     }
@@ -784,7 +849,7 @@ async def reemplazar_asignaciones(
     direccion_ip: Optional[str] = None,
 ) -> Dict[str, Any]:
     id_clinica = int(actor.id_clinica)
-    roles, especialidades, id_rol_principal = await _validar_asignaciones(
+    roles, especialidades, id_rol_principal, sedes = await _validar_asignaciones(
         db, id_clinica, datos
     )
     try:
@@ -802,7 +867,8 @@ async def reemplazar_asignaciones(
 
         roles_antes = await _roles_asignados(db, link.id_vinculacion)
         especialidades_antes = await _especialidades_asignadas(db, link.id_vinculacion)
-        antes = _snapshot_asignaciones(roles_antes, especialidades_antes)
+        sedes_antes = await _sedes_asignadas(db, link.id_vinculacion)
+        antes = _snapshot_asignaciones(roles_antes, especialidades_antes, sedes_antes)
 
         await db.execute(
             delete(VinculacionMedicoRol).where(
@@ -814,6 +880,11 @@ async def reemplazar_asignaciones(
                 VinculacionMedicoEspecialidad.id_vinculacion == link.id_vinculacion
             )
         )
+        await db.execute(
+            delete(VinculacionMedicoSede).where(
+                VinculacionMedicoSede.id_vinculacion == link.id_vinculacion
+            )
+        )
         await _crear_asignaciones(
             db,
             link.id_vinculacion,
@@ -821,12 +892,16 @@ async def reemplazar_asignaciones(
             especialidades,
             id_rol_principal,
             datos,
+            sedes,
         )
         link.row_version = int(link.row_version) + 1
 
         roles_despues = await _roles_asignados(db, link.id_vinculacion)
         especialidades_despues = await _especialidades_asignadas(db, link.id_vinculacion)
-        despues = _snapshot_asignaciones(roles_despues, especialidades_despues)
+        sedes_despues = await _sedes_asignadas(db, link.id_vinculacion)
+        despues = _snapshot_asignaciones(
+            roles_despues, especialidades_despues, sedes_despues
+        )
 
         await _registrar_historial(
             db,
@@ -842,7 +917,7 @@ async def reemplazar_asignaciones(
             id_clinica=id_clinica,
             accion="ACTUALIZAR_ASIGNACIONES_VINCULO",
             id_vinculacion=link.id_vinculacion,
-            descripcion="Reemplazo atómico de roles y especialidades del vínculo",
+            descripcion="Reemplazo atómico de roles, especialidades y sedes del vínculo",
             anteriores=antes,
             nuevos=despues,
             direccion_ip=direccion_ip,
@@ -857,6 +932,7 @@ async def reemplazar_asignaciones(
             medicos.get(link.id_usuario),
             roles_despues,
             especialidades_despues,
+            sedes_despues,
         )
     except IntegrityError:
         await db.rollback()
@@ -943,12 +1019,14 @@ async def cambiar_estado(
         medicos = await _cargar_medicos(db, [link.id_usuario])
         roles = await _roles_asignados(db, link.id_vinculacion)
         especialidades = await _especialidades_asignadas(db, link.id_vinculacion)
+        sedes = await _sedes_asignadas(db, link.id_vinculacion)
         return _respuesta_vinculacion(
             link,
             usuarios.get(link.id_usuario),
             medicos.get(link.id_usuario),
             roles,
             especialidades,
+            sedes,
         )
     except HTTPException:
         await db.rollback()
@@ -1026,13 +1104,19 @@ async def listar_mias(
     usuario_db = usuarios.get(usuario.id_usuario)
     medicos = await _cargar_medicos(db, [usuario.id_usuario])
     asignaciones = await _asignaciones_por_vinculacion(db, ids)
+    sedes_asignadas = await _sedes_por_vinculacion(db, ids)
     medico = medicos.get(usuario.id_usuario)
     items = []
     for link in links:
         roles, especialidades = asignaciones.get(link.id_vinculacion, ([], []))
         items.append(
             _respuesta_vinculacion(
-                link, usuario_db or usuario, medico, roles, especialidades
+                link,
+                usuario_db or usuario,
+                medico,
+                roles,
+                especialidades,
+                sedes_asignadas.get(link.id_vinculacion, []),
             )
         )
     return {"total": total, "page": page, "per_page": per_page, "items": items}
@@ -1105,12 +1189,14 @@ async def _responder_invitacion(
         medicos = await _cargar_medicos(db, [actor.id_usuario])
         roles = await _roles_asignados(db, link.id_vinculacion)
         especialidades = await _especialidades_asignadas(db, link.id_vinculacion)
+        sedes = await _sedes_asignadas(db, link.id_vinculacion)
         return _respuesta_vinculacion(
             link,
             actor,
             medicos.get(actor.id_usuario),
             roles,
             especialidades,
+            sedes,
         )
     except HTTPException:
         await db.rollback()

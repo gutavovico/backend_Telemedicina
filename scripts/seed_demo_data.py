@@ -23,6 +23,7 @@ from app.modules.appointments.models import (
     BloqueoAgenda,
     Cita,
 )
+from app.modules.tenants.models import Sede
 from app.modules.medical_records.fichas.models import FichaClinica
 from app.modules.medical_records.hce.models import HistoriaClinica, Consulta, Diagnostico
 from app.modules.medical_records.clinical_documents.models import DocumentoClinico
@@ -157,6 +158,37 @@ def seed_all():
 
         db.flush()
         _resync_pk_sequence(db, "clinicas", "id_clinica")
+
+        # -------------------------------------------------------------
+        # 1b. Sedes (catálogo institucional, base para asignar sedes en CU29)
+        # -------------------------------------------------------------
+        print("\n[1b/10] Verificando Sedes por Clínica...")
+        sedes_demo = [
+            (1, "Sede Central", "Av. Cañoto esq. México #450, Santa Cruz"),
+            (1, "Sede Norte", "Av. Banzer Km 5.5 #120, Santa Cruz"),
+            (2, "Sede Red Norte", "Av. Cristo Redentor Km 3, Santa Cruz"),
+        ]
+        for id_clinica, nombre, ubicacion in sedes_demo:
+            sede = (
+                db.query(Sede)
+                .filter(Sede.id_clinica == id_clinica, Sede.nombre == nombre)
+                .first()
+            )
+            if not sede:
+                sede = Sede(
+                    id_clinica=id_clinica,
+                    nombre=nombre,
+                    ubicacion=ubicacion,
+                    activa=True,
+                )
+                db.add(sede)
+                print(f"  [+] Creada sede '{nombre}' (clínica {id_clinica})")
+            else:
+                sede.ubicacion = ubicacion
+                sede.activa = True
+                print(f"  [=] Sede '{nombre}' verificada")
+        db.flush()
+        _resync_pk_sequence(db, "sedes", "id")
 
         # -------------------------------------------------------------
         # 2. Roles Canónicos
@@ -312,6 +344,48 @@ def seed_all():
                 "id_clinica": 2,
                 "telefono": "+591 71222222",
             },
+            # CU29: médicos sin clínica (pool global) que la entidad puede invitar
+            {
+                "correo": "medico.carlos@telemedicina.com",
+                "password": "medico123",
+                "nombres": "Dr. Carlos",
+                "apellidos": "Mendoza Rojas",
+                "id_rol": 2,
+                "id_clinica": None,
+                "telefono": "+591 71444444",
+                "documento_identidad": "8123456",
+            },
+            {
+                "correo": "medico.lucia@telemedicina.com",
+                "password": "medico123",
+                "nombres": "Dra. Lucía",
+                "apellidos": "Fernández Castro",
+                "id_rol": 2,
+                "id_clinica": None,
+                "telefono": "+591 71555555",
+                "documento_identidad": "8234567",
+            },
+            {
+                "correo": "medico.jorge@telemedicina.com",
+                "password": "medico123",
+                "nombres": "Dr. Jorge",
+                "apellidos": "Salazar Peña",
+                "id_rol": 2,
+                "id_clinica": None,
+                "telefono": "+591 71666666",
+                "documento_identidad": "8345678",
+            },
+            # CU29: médico ya asociado a otra entidad (caso de invitación cruzada)
+            {
+                "correo": "medico.andrea@telemedicina.com",
+                "password": "medico123",
+                "nombres": "Dra. Andrea",
+                "apellidos": "Villarroel Soria",
+                "id_rol": 2,
+                "id_clinica": 2,
+                "telefono": "+591 71777777",
+                "documento_identidad": "8456789",
+            },
             {
                 "correo": "recepcion@telemedicina.com",
                 "password": "recepcion123",
@@ -391,6 +465,7 @@ def seed_all():
                     id_rol=id_rol,
                     id_clinica=u_data["id_clinica"],
                     telefono=u_data["telefono"],
+                    documento_identidad=u_data.get("documento_identidad"),
                     estado="activo",
                 )
                 db.add(user)
@@ -402,6 +477,8 @@ def seed_all():
                 user.id_rol = id_rol
                 user.id_clinica = u_data["id_clinica"]
                 user.telefono = u_data["telefono"]
+                if u_data.get("documento_identidad"):
+                    user.documento_identidad = u_data["documento_identidad"]
                 user.estado = "activo"
                 print(f"  [=] Usuario actualizado: {u_data['correo']}")
             db.flush()
@@ -581,6 +658,13 @@ def seed_all():
             ("Traumatología", "Lesiones musculoesqueléticas y ortopedia"),
             ("Neurología", "Enfermedades del sistema nervioso central y periférico"),
             ("Oftalmología", "Salud visual y optometría clínica"),
+            ("Medicina Interna", "Diagnóstico y manejo integral del adulto"),
+            ("Endocrinología", "Diabetes, tiroides y trastornos hormonales"),
+            ("Psiquiatría", "Salud mental, ansiedad, depresión y seguimiento farmacológico"),
+            ("Urología", "Patología renal, vías urinarias y salud prostática"),
+            ("Neumología", "Asma, EPOC e infecciones respiratorias"),
+            ("Gastroenterología", "Patología digestiva, hepática y endoscopía"),
+            ("Reumatología", "Enfermedades autoinmunes y articulares"),
         ]
 
         esp_map = {}
@@ -669,6 +753,96 @@ def seed_all():
                 id_especialidad=esp_ped.id_especialidad,
                 es_principal=True
             ))
+
+        db.flush()
+
+        # Perfiles médicos adicionales para probar CU29 (invitación por
+        # correo, asignación de roles/especialidades/sedes y cambio de
+        # estado). Los tres primeros no tienen clínica: son candidatos
+        # globales que cualquier entidad puede invitar; la Dra. Andrea ya
+        # pertenece a la Red Norte, útil para el caso de invitación cruzada.
+        medicos_cu29 = [
+            {
+                "correo": "medico.carlos@telemedicina.com",
+                "matricula": "MAT-30512",
+                "id_clinica": None,
+                "descripcion": "Internista con enfoque en diabetes y obesidad.",
+                "experiencia": "Hospital Obrero (2016-actualidad).",
+                "especialidades": [("Medicina Interna", True), ("Endocrinología", False)],
+            },
+            {
+                "correo": "medico.lucia@telemedicina.com",
+                "matricula": "MAT-30688",
+                "id_clinica": None,
+                "descripcion": "Psiquiatra con formación en terapia cognitivo-conductual.",
+                "experiencia": "Centro de Salud Mental Santa Cruz (2018-actualidad).",
+                "especialidades": [("Psiquiatría", True), ("Neurología", False)],
+            },
+            {
+                "correo": "medico.jorge@telemedicina.com",
+                "matricula": "MAT-30745",
+                "id_clinica": None,
+                "descripcion": "Gastroenterólogo con práctica en endoscopía digestiva.",
+                "experiencia": "Clínica Los Ángeles (2015-actualidad).",
+                "especialidades": [("Gastroenterología", True), ("Medicina Interna", False)],
+            },
+            {
+                "correo": "medico.andrea@telemedicina.com",
+                "matricula": "MAT-30891",
+                "id_clinica": 2,
+                "descripcion": "Pediatra con subespecialidad en neumología infantil.",
+                "experiencia": "Red Médica del Norte (2019-actualidad).",
+                "especialidades": [("Pediatría", True), ("Neumología", False)],
+            },
+        ]
+        for perfil in medicos_cu29:
+            usuario_medico = user_map[perfil["correo"]]
+            perfil_medico = (
+                db.query(Medico)
+                .filter(Medico.id_usuario == usuario_medico.id_usuario)
+                .first()
+            )
+            if not perfil_medico:
+                perfil_medico = Medico(
+                    id_usuario=usuario_medico.id_usuario,
+                    id_clinica=perfil["id_clinica"],
+                    matricula_profesional=perfil["matricula"],
+                    descripcion_profesional=perfil["descripcion"],
+                    experiencia=perfil["experiencia"],
+                    estado="activo",
+                )
+                db.add(perfil_medico)
+                print(
+                    "  [+] Creado perfil médico: "
+                    f"{usuario_medico.nombres} {usuario_medico.apellidos}"
+                )
+            else:
+                perfil_medico.id_clinica = perfil["id_clinica"]
+                perfil_medico.matricula_profesional = perfil["matricula"]
+                perfil_medico.descripcion_profesional = perfil["descripcion"]
+                perfil_medico.experiencia = perfil["experiencia"]
+                perfil_medico.estado = "activo"
+                print(
+                    "  [=] Perfil médico verificado: "
+                    f"{usuario_medico.nombres} {usuario_medico.apellidos}"
+                )
+            db.flush()
+
+            for esp_nombre, es_principal in perfil["especialidades"]:
+                esp = esp_map[esp_nombre]
+                asoc = db.query(MedicoEspecialidad).filter(
+                    MedicoEspecialidad.id_medico == perfil_medico.id_medico,
+                    MedicoEspecialidad.id_especialidad == esp.id_especialidad,
+                ).first()
+                if not asoc:
+                    db.add(MedicoEspecialidad(
+                        id_medico=perfil_medico.id_medico,
+                        id_especialidad=esp.id_especialidad,
+                        es_principal=es_principal,
+                    ))
+                else:
+                    asoc.es_principal = es_principal
+            db.flush()
 
         db.flush()
 

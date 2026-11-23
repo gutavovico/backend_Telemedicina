@@ -25,6 +25,7 @@ from app.modules.appointments.doctor_entity_links.models import (
     VinculacionMedicoEntidad,
     VinculacionMedicoEspecialidad,
     VinculacionMedicoRol,
+    VinculacionMedicoSede,
 )
 from app.modules.appointments.models import (
     Cita,
@@ -45,6 +46,7 @@ from app.modules.auth.models import (
     Usuario,
 )
 from app.modules.auth.service import authenticate_user
+from app.modules.tenants.models import Sede
 from app.modules.tenants.temporary_credentials import user_must_change_password
 
 API = "/api/v1/medicos/vinculaciones"
@@ -319,6 +321,31 @@ class CU29DoctorEntityLinksTestCase(unittest.TestCase):
                     id_medico=1, id_especialidad=1, es_principal=True
                 )
             )
+            db.add_all(
+                [
+                    Sede(
+                        id=1,
+                        id_clinica=1,
+                        nombre="Sede Central",
+                        ubicacion="Centro",
+                        activa=True,
+                    ),
+                    Sede(
+                        id=2,
+                        id_clinica=2,
+                        nombre="Sede Dos",
+                        ubicacion="Norte",
+                        activa=True,
+                    ),
+                    Sede(
+                        id=3,
+                        id_clinica=1,
+                        nombre="Sede Inactiva",
+                        ubicacion="Sur",
+                        activa=False,
+                    ),
+                ]
+            )
             db.commit()
 
     # --------------------------------------------------------------- helpers
@@ -567,8 +594,14 @@ class CU29DoctorEntityLinksTestCase(unittest.TestCase):
         )
         self.assertIn("inactiva", especialidad_inactiva.text)
 
-        sedes = self._crear_existente(7, sedes=[1], expected=422)
-        self.assertIn("CU33", sedes.text)
+        sede_inexistente = self._crear_existente(7, sedes=[99], expected=422)
+        self.assertIn("no existen", sede_inexistente.text)
+
+        sede_otra_entidad = self._crear_existente(7, sedes=[2], expected=422)
+        self.assertIn("otra entidad", sede_otra_entidad.text)
+
+        sede_inactiva = self._crear_existente(7, sedes=[3], expected=422)
+        self.assertIn("inactiva", sede_inactiva.text)
 
         # Rol principal duplicado en especialidades.
         dos_principales = self._crear_existente(
@@ -708,6 +741,59 @@ class CU29DoctorEntityLinksTestCase(unittest.TestCase):
         self.assertIn("medicos:read", data["permisos"])
         self.assertIn("consultas:write", data["permisos"])
         self.assertNotIn("inactivo:test", data["permisos"])
+
+    def test_asignacion_de_sedes_por_vinculo(self):
+        creada = self._crear_existente(7, sedes=[1])
+        id_link = creada.json()["vinculacion"]["id_vinculacion"]
+        detalle = self._detalle(id_link)
+        self.assertEqual(detalle.status_code, 200, detalle.text)
+        self.assertEqual(detalle.json()["vinculacion"]["sedes"], [1])
+
+        self._as_user(1)
+        sin_sedes = self.client.put(
+            f"{API}/{id_link}/asignaciones",
+            json={
+                "roles": [2],
+                "id_rol_principal": 2,
+                "especialidades": [],
+                "sedes": [],
+                "row_version": 1,
+            },
+        )
+        self.assertEqual(sin_sedes.status_code, 200, sin_sedes.text)
+        self.assertEqual(sin_sedes.json()["sedes"], [])
+
+        con_sedes = self.client.put(
+            f"{API}/{id_link}/asignaciones",
+            json={
+                "roles": [2],
+                "id_rol_principal": 2,
+                "especialidades": [],
+                "sedes": [1],
+                "row_version": 2,
+            },
+        )
+        self.assertEqual(con_sedes.status_code, 200, con_sedes.text)
+        self.assertEqual(con_sedes.json()["sedes"], [1])
+        self.assertEqual(con_sedes.json()["row_version"], 3)
+
+        detalle = self._detalle(id_link)
+        asignaciones = [
+            evento
+            for evento in detalle.json()["historial"]
+            if evento["tipo_evento"] == "ASIGNACIONES"
+        ]
+        self.assertEqual(len(asignaciones), 2)
+        self.assertEqual(asignaciones[-1]["datos"]["despues"]["sedes"], [1])
+        self.assertEqual(asignaciones[-1]["datos"]["antes"]["sedes"], [])
+
+        with self.SessionLocal() as db:
+            filas = db.scalars(
+                select(VinculacionMedicoSede).where(
+                    VinculacionMedicoSede.id_vinculacion == id_link
+                )
+            ).all()
+            self.assertEqual([fila.id_sede for fila in filas], [1])
 
     def test_no_se_permite_mas_de_un_rol_principal(self):
         creada = self._crear_existente(7)

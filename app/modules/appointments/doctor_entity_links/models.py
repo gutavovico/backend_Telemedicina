@@ -90,6 +90,11 @@ class VinculacionMedicoEntidad(Base):
         back_populates="vinculacion",
         cascade="all, delete-orphan",
     )
+    sedes = relationship(
+        "VinculacionMedicoSede",
+        back_populates="vinculacion",
+        cascade="all, delete-orphan",
+    )
     historial = relationship(
         "HistorialVinculacionMedico",
         back_populates="vinculacion",
@@ -168,6 +173,36 @@ class VinculacionMedicoEspecialidad(Base):
         )
 
 
+class VinculacionMedicoSede(Base):
+    """Sede de CU33 asignada a un vínculo médico-entidad.
+
+    La tabla depende del catálogo `sedes` de CU33; la revisión Alembic de CU29
+    que la crea cuelga del head que incluye CU33.
+    """
+
+    __tablename__ = "vinculacion_medico_sede"
+
+    id_vinculacion = Column(
+        BigInteger,
+        ForeignKey("vinculaciones_medico_entidad.id_vinculacion", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    id_sede = Column(
+        BigInteger,
+        ForeignKey("sedes.id", ondelete="RESTRICT"),
+        primary_key=True,
+        index=True,
+    )
+
+    vinculacion = relationship("VinculacionMedicoEntidad", back_populates="sedes")
+
+    def __repr__(self) -> str:
+        return (
+            f"<VinculacionMedicoSede(id_vinculacion={self.id_vinculacion}, "
+            f"id_sede={self.id_sede})>"
+        )
+
+
 class HistorialVinculacionMedico(Base):
     __tablename__ = "historial_vinculaciones_medico"
     __table_args__ = (
@@ -242,6 +277,7 @@ __all__ = [
     "VinculacionMedicoEntidad",
     "VinculacionMedicoRol",
     "VinculacionMedicoEspecialidad",
+    "VinculacionMedicoSede",
     "HistorialVinculacionMedico",
     "CredencialTemporalMedico",
 ]

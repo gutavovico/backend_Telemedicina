@@ -19,6 +19,11 @@ from app.modules.appointments.doctor_entity_links.models import (  # noqa: F401
     VinculacionMedicoRol,
     VinculacionMedicoEspecialidad,
     HistorialVinculacionMedico,
+    VinculacionMedicoRol,
+    VinculacionMedicoEspecialidad,
+    VinculacionMedicoSede,
+    HistorialVinculacionMedico,
+    CredencialTemporalMedico,
     CredencialTemporalMedico,
 )
 from app.modules.medical_records.models import Paciente, FichaClinica  # noqa: F401
