@@ -1,8 +1,13 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.modules.auth.dependencies import get_current_user, get_required_tenant_id, require_admin
+from app.modules.auth.dependencies import (
+    get_current_tenant_id_opcional,
+    get_current_user,
+    get_required_tenant_id,
+    require_admin,
+)
 from app.modules.auth.models import Usuario
 from app.modules.appointments.doctor_entity_links.dependencies import (
     require_active_medical_link,
@@ -20,10 +25,28 @@ from app.modules.appointments.doctor_profile.schemas import (
     MedicoUpdate,
 )
 
+def _guard_vinculo_activo(request: Request, db: Session = Depends(get_db),
+                          current_user: Usuario = Depends(get_current_user)) -> Usuario:
+    """Exige vínculo CU29 activo, salvo para consultar el propio perfil.
+
+    ``/medicos/me`` se llama justo después del login (y durante el polling del
+    frontend). Un médico con invitación pendiente todavía no tiene vínculo
+    ACTIVO, pero sí debe poder leer su propio perfil para llegar a la bandeja
+    donde acepta la invitación.
+    """
+    if request.url.path.rstrip("/").endswith("/medicos/me"):
+        return current_user
+    return require_active_medical_link(
+        x_tenant_id=request.headers.get("X-Tenant-ID"),
+        db=db,
+        current_user=current_user,
+    )
+
+
 router = APIRouter(
     prefix="/medicos",
     tags=["Médicos (CU04)"],
-    dependencies=[Depends(require_active_medical_link)],
+    dependencies=[Depends(_guard_vinculo_activo)],
 )
 router_especialidades = APIRouter(prefix="/especialidades", tags=["Especialidades (CU04)"])
 
@@ -50,8 +73,8 @@ def crear_medico(
 )
 def obtener_mi_perfil(
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_active_medical_link),
-    tenant_id: int = Depends(get_required_tenant_id),
+    current_user: Usuario = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id_opcional),
 ):
     return service.obtener_medico_por_usuario(db, current_user.id_usuario, current_tenant_id=tenant_id)
 

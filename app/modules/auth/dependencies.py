@@ -132,6 +132,38 @@ def get_current_tenant_id(
     return None
 
 
+def get_current_tenant_id_opcional(
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    current_user: Optional[Usuario] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Optional[int]:
+    """Tenant para consultas personales, tolerante con vínculos CU29 no activos.
+
+    Un médico invitado (vínculo INVITADO/SUSPENDIDO) todavía no tiene contexto
+    clínico, pero sí debe poder cargar su bandeja de notificaciones y registrar
+    dispositivos. Si no hay vínculo activo se devuelve ``None`` y los servicios
+    filtran únicamente por ``id_usuario``.
+    """
+    if current_user is None:
+        return None
+    try:
+        contexto = _resolver_contexto_medico(db, current_user, x_tenant_id)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_403_FORBIDDEN:
+            return None
+        raise
+    if contexto is not None:
+        return int(contexto.link.id_clinica)
+    if current_user.id_clinica is not None:
+        return current_user.id_clinica
+    if x_tenant_id:
+        try:
+            return int(x_tenant_id)
+        except ValueError:
+            return None
+    return None
+
+
 def _resolver_contexto_medico(
     db: Session,
     current_user: Usuario,

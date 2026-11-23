@@ -8,6 +8,15 @@ from app.modules.tenants.subscription_payments import service as payments
 CLINICAL_MODULES = ('app.modules.medical_records.', 'app.modules.appointments.',
                     'app.modules.analytics.', 'app.modules.communications.')
 
+# Estas rutas son de contexto personal / autogestión: un médico con vínculo
+# INVITADO o SUSPENDIDO debe poder cargarlas para aceptar/rechazar invitaciones
+# y consultar su bandeja. El gate de suscripción no debe bloquearlas.
+SELF_SERVICE_MODULES = (
+    'app.modules.appointments.doctor_entity_links.router',
+    'app.modules.appointments.doctor_profile.router',
+    'app.modules.communications.notificaciones.router',
+)
+
 
 def assert_clinical_access(db, tenant_id, now=None):
     if tenant_id is None:
@@ -34,7 +43,10 @@ def assert_clinical_access(db, tenant_id, now=None):
 
 def check_authenticated_endpoint(db, user, connection):
     endpoint = connection.scope.get('endpoint')
-    if not getattr(endpoint, '__module__', '').startswith(CLINICAL_MODULES):
+    endpoint_module = getattr(endpoint, '__module__', '')
+    if endpoint_module.startswith(SELF_SERVICE_MODULES):
+        return
+    if not endpoint_module.startswith(CLINICAL_MODULES):
         return
     tenant_id = user.id_clinica
     if tenant_id is None:
