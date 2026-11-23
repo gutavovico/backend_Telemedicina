@@ -224,6 +224,8 @@ def crear_cita(
     db.add(nueva_cita)
     db.commit()
     db.refresh(nueva_cita)
+    from app.modules.communications.notificaciones.hooks import notificar_cita_creada
+    notificar_cita_creada(db, nueva_cita, paciente, medico)
     return formatear_cita_response(nueva_cita)
 
 
@@ -357,11 +359,21 @@ def _reasignar_lista_espera(db: Session, cita: Cita, origen: str) -> None:
         )
 
 
-def actualizar_cita(db: Session, id_cita: int, datos: CitaUpdate) -> Optional[CitaResponse]:
-    cita = db.query(Cita).filter(Cita.id_cita == id_cita).first()
+def actualizar_cita(
+    db: Session,
+    id_cita: int,
+    datos: CitaUpdate,
+    *,
+    tenant_id: Optional[int] = None,
+    current_user: Optional[Usuario] = None,
+) -> Optional[CitaResponse]:
+    q = db.query(Cita).filter(Cita.id_cita == id_cita)
+    if tenant_id is not None:
+        q = q.filter(Cita.id_clinica == tenant_id)
+    cita = q.first()
     if not cita:
         return None
-    if current_user is not None:
+    if current_user is not None and tenant_id is not None:
         _verificar_acceso_cita(db, cita, current_user, tenant_id)
 
     estado_anterior = (cita.estado or "").upper()
@@ -387,6 +399,13 @@ def actualizar_cita(db: Session, id_cita: int, datos: CitaUpdate) -> Optional[Ci
 
     db.commit()
     db.refresh(cita)
+    from app.modules.communications.notificaciones.hooks import notificar_cita_actualizada
+    notificar_cita_actualizada(
+        db,
+        cita,
+        estado_nuevo=update_dict.get("estado"),
+        cambio_horario=("fecha_cita" in update_dict or "hora_inicio" in update_dict),
+    )
 
     if (cita.estado or "").upper() == "CANCELADA" and estado_anterior != "CANCELADA":
         _reasignar_lista_espera(db, cita, "cancelacion")

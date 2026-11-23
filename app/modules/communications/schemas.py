@@ -76,6 +76,9 @@ class TeleconsultaViewDTO(BaseModel):
     cita: AppointmentDetailsDTO
     medico: DoctorProfileSummaryDTO
     mensajes: List[ChatMessageDTO] = []
+    iceServers: Optional[List[dict]] = None
+    duracionMaximaMinutos: Optional[int] = 60
+    heartbeatTimeoutSegundos: Optional[int] = 45
 
     model_config = ConfigDict(from_attributes=True)
 

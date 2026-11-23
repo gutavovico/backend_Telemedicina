@@ -186,15 +186,25 @@ class CU12ClinicalDocumentsTestCase(unittest.TestCase):
             conn.exec_driver_sql("""
                 CREATE TABLE notificaciones (
                     id_notificacion INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id_clinica INTEGER NULL,
                     id_usuario INTEGER NOT NULL,
+                    outbox_id INTEGER NULL,
+                    rol_destinatario TEXT NULL,
                     tipo TEXT NULL,
+                    categoria TEXT NOT NULL DEFAULT 'SISTEMA',
                     canal TEXT NULL,
+                    canal_badge TEXT NULL,
                     titulo TEXT NULL,
                     mensaje TEXT NULL,
+                    recurso_tipo TEXT NULL,
+                    recurso_id TEXT NULL,
+                    enlace_accion TEXT NULL,
+                    payload_extra TEXT NULL,
                     fecha_programada TIMESTAMP NULL,
                     fecha_envio TIMESTAMP NULL,
                     fecha_lectura TIMESTAMP NULL,
-                    estado TEXT NOT NULL DEFAULT 'PENDIENTE'
+                    estado TEXT NOT NULL DEFAULT 'PENDIENTE',
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 

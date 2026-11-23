@@ -365,6 +365,9 @@ def firmar_orden(
 
     db.commit()
     db.refresh(orden)
+    db.refresh(doc)
+    from app.modules.communications.notificaciones.hooks import notificar_orden_laboratorio_firmada
+    notificar_orden_laboratorio_firmada(db, orden, doc)
     return orden
 
 

@@ -296,3 +296,18 @@ def obtener_senales_webrtc(id_cita: str, para: str = Query(..., description="DOC
 def limpiar_senales_webrtc(id_cita: str):
     service.limpiar_senales_webrtc(id_cita)
     return {"ok": True}
+
+
+@router.get(
+    "/teleconsulta/config",
+    summary="Obtener configuración WebRTC ICE (STUN/TURN) y límites de sesión (CU14)",
+)
+def obtener_configuracion_teleconsulta():
+    """Retorna los servidores ICE configurados dinámicamente en el entorno y parámetros de sesión."""
+    from app.core.config import settings
+    return {
+        "iceServers": settings.webrtc_ice_servers,
+        "duracionMaximaMinutos": settings.TELECONSULTA_MAX_DURATION_MINUTES,
+        "heartbeatTimeoutSegundos": settings.TELECONSULTA_HEARTBEAT_TIMEOUT_SECONDS,
+        "grabacionHabilitada": settings.TELECONSULTA_RECORDING_ENABLED,
+    }

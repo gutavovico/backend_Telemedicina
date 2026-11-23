@@ -220,6 +220,9 @@ def crear_ficha(
     db.commit()
     db.refresh(nueva_ficha)
 
+    from app.modules.communications.notificaciones.hooks import notificar_ficha_creada
+    notificar_ficha_creada(db, nueva_ficha)
+
     return _to_ficha_response(nueva_ficha)
 
 
@@ -343,6 +346,9 @@ def actualizar_clinica_ficha(
     db.commit()
     db.refresh(ficha)
 
+    from app.modules.communications.notificaciones.hooks import notificar_ficha_actualizada
+    notificar_ficha_actualizada(db, ficha)
+
     return _to_ficha_response(ficha)
 
 
@@ -367,5 +373,8 @@ def cancelar_ficha(
     ficha.updated_at = datetime.now()
     db.commit()
     db.refresh(ficha)
+
+    from app.modules.communications.notificaciones.hooks import notificar_ficha_cancelada
+    notificar_ficha_cancelada(db, ficha)
 
     return _to_ficha_response(ficha)

@@ -41,6 +41,11 @@ from app.modules.medical_records.tratamientos.avisos_models import (  # noqa: F4
     TratamientoAviso, TratamientoDispositivo, TratamientoEntregaPush, TratamientoCursor,
 )
 from app.modules.backup.models import BackupConfig  # noqa: F401
+from app.modules.communications.notificaciones.models import (  # noqa: F401
+    DispositivoAutorizado,
+    EventoOutbox,
+    Notificacion,
+)
 from app.modules.tenants.models import (  # noqa: F401
     Sede, HorarioSede, TemaAdministrador,
     PlanVersion, TenantRequest, TenantRequestTrackingAudit, TenantSubscription, SubscriptionPayment, SubscriptionChange,

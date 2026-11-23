@@ -21,9 +21,10 @@ from app.modules.medical_records.router import router as medical_records_router
 from app.modules.appointments.router import router as appointments_router
 from app.modules.analytics.router import router as analytics_router
 from app.modules.communications.router import router as communications_router
+from app.modules.communications.notificaciones.router import router as notificaciones_router
+from app.modules.communications.notificaciones import scheduler as notificaciones_scheduler
 from app.modules.payments.router import router as payments_router, pago_error_handler
 from app.modules.payments.service import PagoError
-from app.modules.notificaciones.router import router as notificaciones_router
 from app.modules.medical_records.prescriptions.router import prescription_error_handler
 from app.modules.medical_records.prescriptions.service import PrescriptionError
 from app.modules.medical_records.tratamientos.router import treatment_error_handler
@@ -61,6 +62,7 @@ async def lifespan(app: FastAPI):
         _log.warning("CU16 startup crypto validation warning: %s", exc)
 
     backup_scheduler.iniciar()
+    notificaciones_scheduler.iniciar()
     subscription_worker.start()
     billing_overages_worker.start()
     try:
@@ -68,6 +70,7 @@ async def lifespan(app: FastAPI):
     finally:
         billing_overages_worker.stop()
         subscription_worker.stop()
+        notificaciones_scheduler.detener()
         backup_scheduler.detener()
 
 
@@ -144,6 +147,10 @@ app.include_router(analytics_router, prefix="/api/v1")
 app.include_router(communications_router)
 app.include_router(communications_router, prefix="/api/v1")
 
+# Notificaciones y Recordatorios Multicanal (CU20)
+app.include_router(notificaciones_router)
+app.include_router(notificaciones_router, prefix="/api/v1")
+
 # Respaldos de base de datos
 app.include_router(backup_router)
 app.include_router(planes_router)
@@ -158,10 +165,6 @@ app.add_exception_handler(BillingHttpException, billing_http_exception_handler)
 # Pagos de citas y teleconsultas + comprobantes (CU19)
 app.include_router(payments_router)
 app.include_router(payments_router, prefix="/api/v1")
-
-# Notificaciones push del mÃ³vil (CU19)
-app.include_router(notificaciones_router)
-app.include_router(notificaciones_router, prefix="/api/v1")
 
 # CU16: formato de error uniforme {"detail", "code"}
 app.add_exception_handler(PrescriptionError, prescription_error_handler)

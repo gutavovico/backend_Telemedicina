@@ -1,3 +1,4 @@
+from app.core.config import settings
 import re
 from datetime import datetime
 from typing import List, Optional, Union
@@ -249,6 +250,9 @@ def obtener_teleconsulta(
         cita=cita_dto,
         medico=medico_dto,
         mensajes=mensajes_dto,
+        iceServers=settings.webrtc_ice_servers,
+        duracionMaximaMinutos=settings.TELECONSULTA_MAX_DURATION_MINUTES,
+        heartbeatTimeoutSegundos=settings.TELECONSULTA_HEARTBEAT_TIMEOUT_SECONDS,
     )
 
 
@@ -511,6 +515,9 @@ def actualizar_presencia_teleconsulta(
             db.commit()
     except Exception:
         db.rollback()
+
+    from app.modules.communications.notificaciones.hooks import notificar_presencia_teleconsulta
+    notificar_presencia_teleconsulta(db, id_num, rol=rol, conectado=conectado, nombre=nombre)
 
     return obtener_presencia_teleconsulta(db, id_num)
 

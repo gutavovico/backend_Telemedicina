@@ -167,6 +167,8 @@ def create_document(
     audit(db, id_clinica=target_clinica, id_usuario=current_user.id_usuario,
           tabla="documentos_clinicos", registro_id=doc.id_documento,
           accion="CREAR_DOCUMENTO", descripcion=f"Documento {doc.tipo_documento} registrado")
+    from app.modules.communications.notificaciones.hooks import notificar_documento_creado
+    notificar_documento_creado(db, doc)
     return doc
 
 

@@ -748,6 +748,8 @@ def _emitir_receta_tx(db: Session, *, user: Usuario, tenant_id: int,
                                 "PRESCRIPTION_CONFLICT") from exc
 
     db.refresh(receta)
+    from app.modules.communications.notificaciones.hooks import notificar_receta_emitida
+    notificar_receta_emitida(db, receta)
     return receta, False
 
 

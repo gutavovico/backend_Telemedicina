@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, Integer, String, Boolean, func, DateTime, Text, ForeignKey
+from sqlalchemy import Column, BigInteger, Integer, String, Boolean, func, DateTime, Text, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from app.modules.auth.models import Usuario
@@ -9,15 +9,25 @@ class Notificacion(Base):
     __tablename__ = "notificaciones"
 
     id_notificacion = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True, index=True)
-    id_usuario = Column(BigInteger, ForeignKey("usuarios.id_usuario"), nullable=False)
+    id_clinica = Column(BigInteger, ForeignKey("clinicas.id_clinica"), nullable=True, index=True)
+    id_usuario = Column(BigInteger, ForeignKey("usuarios.id_usuario"), nullable=False, index=True)
+    outbox_id = Column(BigInteger, ForeignKey("eventos_outbox.id_evento"), nullable=True, index=True)
+    rol_destinatario = Column(String(30), nullable=True)
     tipo = Column(String(50), nullable=True)
+    categoria = Column(String(30), nullable=False, default="SISTEMA")
     canal = Column(String(30), nullable=True)
+    canal_badge = Column(String(30), nullable=True)
     titulo = Column(String(200), nullable=True)
     mensaje = Column(Text, nullable=True)
+    recurso_tipo = Column(String(50), nullable=True)
+    recurso_id = Column(String(64), nullable=True)
+    enlace_accion = Column(String(255), nullable=True)
+    payload_extra = Column(JSON, nullable=True)
     fecha_programada = Column(DateTime(timezone=True), nullable=True)
     fecha_envio = Column(DateTime(timezone=True), nullable=True)
     fecha_lectura = Column(DateTime(timezone=True), nullable=True)
     estado = Column(String(30), nullable=False, default="PENDIENTE")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     def __repr__(self) -> str:
         return f"<Notificacion(id={self.id_notificacion}, titulo='{self.titulo}', estado='{self.estado}')>"

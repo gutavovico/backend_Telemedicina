@@ -151,6 +151,29 @@ class Settings(BaseSettings):
     CU17_DEVICE_TOKEN_KEY: SecretStr = SecretStr("")
     CU17_SYSTEM_USER_IDS_JSON: str = "{}"
 
+    # ------------------------------------------------------------------ #
+    # CU14 - Teleconsultas y Videoconsulta WebRTC
+    # ------------------------------------------------------------------ #
+    WEBRTC_STUN_SERVER: str = "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302"
+    WEBRTC_TURN_SERVER: str = ""
+    WEBRTC_TURN_USERNAME: str = ""
+    WEBRTC_TURN_CREDENTIAL: str = ""
+    TELECONSULTA_MAX_DURATION_MINUTES: int = 60
+    TELECONSULTA_HEARTBEAT_TIMEOUT_SECONDS: int = 45
+    TELECONSULTA_RECORDING_ENABLED: bool = False
+
+    # ------------------------------------------------------------------ #
+    # CU20 - Notificaciones y Recordatorios Multicanal (Push / Email / SMS)
+    # ------------------------------------------------------------------ #
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_SUBJECT: str = "mailto:soporte@telemedicina.com"
+    FCM_PROJECT_ID: str = ""
+    FCM_SERVICE_ACCOUNT_JSON: str = ""
+    GOOGLE_APPLICATION_CREDENTIALS: str = ""
+    OUTBOX_WORKER_ACTIVO: bool = False
+    OUTBOX_WORKER_INTERVALO_SEGUNDOS: int = 30
+
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[2] / ".env",
         env_file_encoding="utf-8",
@@ -171,6 +194,24 @@ class Settings(BaseSettings):
         if self.DB_CHANNEL_BINDING:
             params.append(f"channel_binding={self.DB_CHANNEL_BINDING}")
         return base + (("?" + "&".join(params)) if params else "")
+
+    @property
+    def webrtc_ice_servers(self) -> List[dict]:
+        servers = []
+        if self.WEBRTC_STUN_SERVER:
+            stun_urls = [s.strip() for s in self.WEBRTC_STUN_SERVER.split(",") if s.strip()]
+            if stun_urls:
+                servers.append({"urls": stun_urls})
+        if self.WEBRTC_TURN_SERVER:
+            turn_urls = [s.strip() for s in self.WEBRTC_TURN_SERVER.split(",") if s.strip()]
+            if turn_urls:
+                turn_entry = {"urls": turn_urls}
+                if self.WEBRTC_TURN_USERNAME:
+                    turn_entry["username"] = self.WEBRTC_TURN_USERNAME
+                if self.WEBRTC_TURN_CREDENTIAL:
+                    turn_entry["credential"] = self.WEBRTC_TURN_CREDENTIAL
+                servers.append(turn_entry)
+        return servers
 
     @property
     def cors_origins_list(self) -> List[str]:
