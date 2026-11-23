@@ -202,6 +202,27 @@ def endpoint_update_commercial_agreement(
     return update_commercial_agreement(db, current_user, tenant_id, payload)
 
 
+def _resolve_contexto_medico_opcional(db, current_user, x_tenant_id):
+    """Contexto CU29 sin bloquear a médicos con vínculo INVITADO/SUSPENDIDO.
+
+    `/tenant/context` es el shell de la app: debe responder aunque el médico
+    todavía no haya aceptado su invitación, para que pueda llegar a la bandeja
+    de vinculaciones donde se acepta. Sin `X-Tenant-ID`, un `403` por falta
+    de vínculo activo se traduce a `None` (sin contexto clínico); con header
+    explícito se conserva el rechazo estricto (CU29).
+    """
+    from app.modules.appointments.doctor_entity_links.dependencies import (
+        resolve_active_medical_link,
+    )
+
+    try:
+        return resolve_active_medical_link(db, current_user, x_tenant_id)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_403_FORBIDDEN and not x_tenant_id:
+            return None
+        raise
+
+
 @router.get(
     "/tenant/context",
     response_model=TenantContextResponse,
@@ -245,11 +266,7 @@ def get_tenant_context(
             clinica_nombre = clinica.nombre
             clinica_estado = clinica.estado
     else:
-        from app.modules.appointments.doctor_entity_links.dependencies import (
-            resolve_active_medical_link,
-        )
-
-        contexto_medico = resolve_active_medical_link(db, current_user, x_tenant_id)
+        contexto_medico = _resolve_contexto_medico_opcional(db, current_user, x_tenant_id)
         tenant_objetivo = (
             contexto_medico.link.id_clinica
             if contexto_medico is not None
@@ -279,11 +296,7 @@ def get_tenant_context(
     roles_efectivos: List[str] = []
     rol_nombre = ""
     if not super_admin:
-        from app.modules.appointments.doctor_entity_links.dependencies import (
-            resolve_active_medical_link,
-        )
-
-        contexto_medico = resolve_active_medical_link(db, current_user, x_tenant_id)
+        contexto_medico = _resolve_contexto_medico_opcional(db, current_user, x_tenant_id)
         if contexto_medico is not None:
             rol_nombre = contexto_medico.rol_principal or ""
             roles_efectivos = list(contexto_medico.roles)

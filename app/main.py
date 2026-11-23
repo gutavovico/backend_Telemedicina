@@ -176,8 +176,9 @@ app.add_exception_handler(PagoError, pago_error_handler)
 
 
 @app.get("/", tags=["General"], summary="Health Check")
+@app.get("/health", tags=["General"], summary="Health Check")
 def health_check():
-    """Endpoint de estado del servicio."""
+    """Endpoint de estado del servicio (alias `/health` para sondas y README)."""
     return {
         "status": "ok",
         "app": "Telemedicina API",

@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.modules.auth.dependencies import get_current_tenant_id, get_current_user
+from app.modules.auth.dependencies import get_current_tenant_id_opcional, get_current_user
 from app.modules.auth.models import Usuario
 from app.modules.communications.notificaciones.schemas import (
     DispositivoDTO,
@@ -50,7 +50,7 @@ def obtener_config_web_push():
 def registrar_web_push(
     dto: WebPushSubscripcionDTO,
     usuario: Usuario = Depends(get_current_user),
-    id_clinica: Optional[int] = Depends(get_current_tenant_id),
+    id_clinica: Optional[int] = Depends(get_current_tenant_id_opcional),
     db: Session = Depends(get_db),
 ):
     srv = NotificacionService(db)
@@ -73,7 +73,7 @@ def registrar_web_push(
 def registrar_dispositivo(
     payload: Dict[str, Any] = Body(...),
     usuario: Usuario = Depends(get_current_user),
-    id_clinica: Optional[int] = Depends(get_current_tenant_id),
+    id_clinica: Optional[int] = Depends(get_current_tenant_id_opcional),
     db: Session = Depends(get_db),
 ):
     # Compatibilidad con el contrato CU19 ({token, plataforma}) usado por pagos móvil
@@ -130,7 +130,7 @@ def listar_dispositivos(
 def revocar_dispositivo(
     dispositivo_id: str,
     usuario: Usuario = Depends(get_current_user),
-    id_clinica: Optional[int] = Depends(get_current_tenant_id),
+    id_clinica: Optional[int] = Depends(get_current_tenant_id_opcional),
     db: Session = Depends(get_db),
 ):
     revocados = NotificacionService(db).revocar_dispositivo(
@@ -163,7 +163,7 @@ def consultar_bandeja(
     solo_no_leidas: bool = Query(default=False),
     limite: int = Query(default=50, ge=1, le=200),
     usuario: Usuario = Depends(get_current_user),
-    id_clinica: Optional[int] = Depends(get_current_tenant_id),
+    id_clinica: Optional[int] = Depends(get_current_tenant_id_opcional),
     db: Session = Depends(get_db),
 ):
     return NotificacionService(db).listar_bandeja(
@@ -182,7 +182,7 @@ def consultar_bandeja(
 )
 def obtener_resumen_no_leidas(
     usuario: Usuario = Depends(get_current_user),
-    id_clinica: Optional[int] = Depends(get_current_tenant_id),
+    id_clinica: Optional[int] = Depends(get_current_tenant_id_opcional),
     db: Session = Depends(get_db),
 ):
     return NotificacionService(db).obtener_resumen_no_leidas(
@@ -199,7 +199,7 @@ def obtener_resumen_no_leidas(
 def marcar_leida(
     id_notificacion: int,
     usuario: Usuario = Depends(get_current_user),
-    id_clinica: Optional[int] = Depends(get_current_tenant_id),
+    id_clinica: Optional[int] = Depends(get_current_tenant_id_opcional),
     db: Session = Depends(get_db),
 ):
     res = NotificacionService(db).marcar_leida(
@@ -218,7 +218,7 @@ def marcar_leida(
 )
 def marcar_todas_leidas(
     usuario: Usuario = Depends(get_current_user),
-    id_clinica: Optional[int] = Depends(get_current_tenant_id),
+    id_clinica: Optional[int] = Depends(get_current_tenant_id_opcional),
     db: Session = Depends(get_db),
 ):
     count = NotificacionService(db).marcar_todas_leidas(
@@ -265,7 +265,7 @@ def actualizar_preferencias(
 def emitir_notificacion_endpoint(
     cmd: EmisionNotificacionCommand,
     usuario: Usuario = Depends(get_current_user),
-    id_clinica: Optional[int] = Depends(get_current_tenant_id),
+    id_clinica: Optional[int] = Depends(get_current_tenant_id_opcional),
     db: Session = Depends(get_db),
 ):
     rol = (usuario.rol or "").upper()
