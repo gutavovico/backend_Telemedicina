@@ -17,7 +17,8 @@ typing_extensions==4.16.0
 uvicorn==0.52.4
 
 # ORM & Migraciones
-sqlalchemy>=2.0.0
+sqlalchemy[asyncio]>=2.0.0,<2.2
+greenlet>=3.0
 alembic>=1.13.0
 
 # Variables de entorno y configuración
