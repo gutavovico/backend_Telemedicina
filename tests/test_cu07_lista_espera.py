@@ -158,6 +158,13 @@ class CU07ListaEsperaTestCase(unittest.TestCase):
         with self.SessionLocal() as db:
             return db.execute(text("SELECT id_usuario,tipo,estado FROM notificaciones")).all()
 
+    def _notificaciones_detalle(self):
+        with self.SessionLocal() as db:
+            return db.execute(text(
+                "SELECT id_usuario,tipo,categoria,recurso_tipo,enlace_accion "
+                "FROM notificaciones ORDER BY id_notificacion"
+            )).all()
+
     def _citas(self):
         with self.SessionLocal() as db:
             return db.execute(text("SELECT id_cita,id_paciente,estado,hora_inicio FROM citas ORDER BY id_cita")).all()
@@ -261,6 +268,15 @@ class CU07ListaEsperaTestCase(unittest.TestCase):
             ), {"id": response.json()["id_cita_ofrecida"]}).one()
             self.assertEqual(cita.estado, "CONFIRMADA")
 
+        avisos = self._notificaciones_detalle()
+        self.assertEqual(len(avisos), 2)  # ofrecimiento + confirmación
+        confirmado = [a for a in avisos if a.tipo == "TURNO_CONFIRMADO"]
+        self.assertEqual(len(confirmado), 1)
+        self.assertEqual(confirmado[0].id_usuario, 4)
+        self.assertEqual(confirmado[0].categoria, "CITAS")
+        self.assertEqual(confirmado[0].recurso_tipo, "LISTA_ESPERA")
+        self.assertEqual(confirmado[0].enlace_accion, "/lista-espera")
+
     def test_rechazar_ofrece_al_siguiente(self):
         self._as(3)
         primera = self.client.post(PREFIX, json={
@@ -284,6 +300,15 @@ class CU07ListaEsperaTestCase(unittest.TestCase):
             ), {"id": segunda["id_lista_espera"]}).one()
             self.assertEqual(siguiente.estado, "OFRECIDO")
             self.assertIsNotNone(siguiente.id_cita_ofrecida)
+
+        avisos = self._notificaciones_detalle()
+        tipos = [a.tipo for a in avisos]
+        self.assertIn("TURNO_RECHAZADO", tipos)
+        self.assertIn("TURNO_REASIGNADO", tipos)
+        rechazo = [a for a in avisos if a.tipo == "TURNO_RECHAZADO"][0]
+        self.assertEqual(rechazo.id_usuario, 6)  # paciente 41 -> usuario 6
+        self.assertEqual(rechazo.categoria, "CITAS")
+        self.assertEqual(rechazo.enlace_accion, "/lista-espera")
 
     # --- Liberacion de bloqueo --------------------------------------------
     def test_liberacion_de_bloqueo_ofrece_el_cupo(self):

@@ -280,11 +280,18 @@ def _notificar_oferta(db: Session, entrada: ListaEspera, cita: Cita) -> None:
     )
     db.add(
         Notificacion(
+            id_clinica=entrada.id_clinica,
             id_usuario=paciente.id_usuario,
+            rol_destinatario="PACIENTE",
             tipo="TURNO_REASIGNADO",
+            categoria="CITAS",
             canal="PUSH",
+            canal_badge="Push",
             titulo=titulo,
             mensaje=mensaje,
+            recurso_tipo="LISTA_ESPERA",
+            recurso_id=str(entrada.id_lista_espera),
+            enlace_accion="/lista-espera",
             estado="PENDIENTE",
         )
     )
@@ -303,6 +310,73 @@ def _notificar_oferta(db: Session, entrada: ListaEspera, cita: Cita) -> None:
         )
     except Exception as exc:  # El push nunca bloquea la reasignacion.
         logger.warning("Push CU07 omitido para la inscripcion %s: %s", entrada.id_lista_espera, exc)
+
+
+def _notificar_respuesta(
+    db: Session,
+    entrada: ListaEspera,
+    cita: Optional[Cita],
+    *,
+    confirmada: bool,
+) -> None:
+    """Registra y envía el aviso cuando el paciente acepta o rechaza el turno.
+
+    La bandeja de CU20 consulta la tabla `notificaciones`, así que este registro
+    hace aparecer el heads-up en la APK aunque el proveedor FCM no esté disponible.
+    """
+    paciente = db.get(Paciente, entrada.id_paciente)
+    if paciente is None or paciente.id_usuario is None:
+        return
+
+    medico = db.get(Medico, cita.id_medico) if cita is not None else None
+    nombre_medico = _nombre_medico(medico) or "el especialista"
+    fecha = cita.fecha_cita.isoformat() if cita is not None and cita.fecha_cita else ""
+    hora = _hora_str(cita.hora_inicio) if cita is not None else ""
+
+    if confirmada:
+        tipo = "TURNO_CONFIRMADO"
+        titulo = "Turno confirmado"
+        mensaje = f"Confirmaste tu turno con {nombre_medico} el {fecha} a las {hora}."
+    else:
+        tipo = "TURNO_RECHAZADO"
+        titulo = "Turno rechazado"
+        mensaje = (
+            f"Rechazaste el turno con {nombre_medico} el {fecha} a las {hora}. "
+            "El cupo se ofrecerá al siguiente paciente."
+        )
+
+    db.add(
+        Notificacion(
+            id_clinica=entrada.id_clinica,
+            id_usuario=paciente.id_usuario,
+            rol_destinatario="PACIENTE",
+            tipo=tipo,
+            categoria="CITAS",
+            canal="PUSH",
+            canal_badge="Push",
+            titulo=titulo,
+            mensaje=mensaje,
+            recurso_tipo="LISTA_ESPERA",
+            recurso_id=str(entrada.id_lista_espera),
+            enlace_accion="/lista-espera",
+            estado="PENDIENTE",
+        )
+    )
+    try:
+        enviar_push_usuario(
+            db,
+            paciente.id_usuario,
+            entrada.id_clinica,
+            titulo,
+            mensaje,
+            {
+                "tipo": tipo,
+                "id_lista_espera": entrada.id_lista_espera,
+                "id_cita": cita.id_cita if cita is not None else "",
+            },
+        )
+    except Exception as exc:  # El push nunca bloquea la respuesta del paciente.
+        logger.warning("Push CU07 omitido para la respuesta %s: %s", entrada.id_lista_espera, exc)
 
 
 def _crear_oferta(
@@ -503,6 +577,7 @@ def confirmar(db: Session, id_lista_espera: int, user: Usuario, tenant_id: int) 
     cita.estado = "CONFIRMADA"
     entrada.estado = "CONFIRMADO"
     entrada.fecha_respuesta = _ahora()
+    _notificar_respuesta(db, entrada, cita, confirmada=True)
     db.commit()
     db.refresh(entrada)
     _posiciones(db, tenant_id, [entrada])
@@ -530,6 +605,7 @@ def rechazar(db: Session, id_lista_espera: int, user: Usuario, tenant_id: int) -
 
     entrada.estado = "RECHAZADO"
     entrada.fecha_respuesta = _ahora()
+    _notificar_respuesta(db, entrada, cita, confirmada=False)
     db.commit()
     db.refresh(entrada)
 
